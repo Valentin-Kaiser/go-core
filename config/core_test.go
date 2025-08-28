@@ -183,7 +183,7 @@ func TestPackageConstants(_ *testing.T) {
 	_ = config.Get()
 
 	// Test that we can call OnChange (should not panic)
-	config.OnChange(func(_ config.Config) error {
+	config.OnChange(func(_, _ config.Config) error {
 		return nil
 	})
 }
@@ -617,7 +617,7 @@ func TestOnChangeCallbacks(t *testing.T) {
 	}
 
 	callbackCalled := false
-	config.OnChange(func(_ config.Config) error {
+	config.OnChange(func(_, _ config.Config) error {
 		callbackCalled = true
 		return nil
 	})
@@ -654,7 +654,7 @@ func TestOnChangeCallbackError(t *testing.T) {
 		t.Fatalf("Register failed: %v", err)
 	}
 
-	config.OnChange(func(_ config.Config) error {
+	config.OnChange(func(_, _ config.Config) error {
 		return errors.New("callback error")
 	})
 

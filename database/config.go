@@ -46,3 +46,25 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+func (c *Config) Changed(n *Config) bool {
+	if c.Driver != n.Driver {
+		return true
+	}
+	if c.Host != n.Host {
+		return true
+	}
+	if c.Port != n.Port {
+		return true
+	}
+	if c.User != n.User {
+		return true
+	}
+	if c.Password != n.Password {
+		return true
+	}
+	if c.Name != n.Name {
+		return true
+	}
+	return false
+}
