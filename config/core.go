@@ -105,7 +105,7 @@ var (
 	mutex      = &sync.RWMutex{}
 	config     Config
 	configname string
-	onChange   []func(Config) error
+	onChange   []func(o Config, n Config) error
 	lastChange atomic.Int64
 )
 
@@ -142,7 +142,7 @@ func Register(name string, c Config) error {
 }
 
 // OnChange registers a function that is called when the configuration changes
-func OnChange(f func(Config) error) {
+func OnChange(f func(o Config, n Config) error) {
 	onChange = append(onChange, f)
 }
 
@@ -185,9 +185,10 @@ func Read() error {
 		return apperror.Wrap(err)
 	}
 
+	o := Get()
 	apply(change)
 	for _, f := range onChange {
-		err = f(config)
+		err = f(o, change)
 		if err != nil {
 			return apperror.Wrap(err)
 		}
@@ -208,6 +209,7 @@ func Write(change Config) error {
 		return apperror.Wrap(err)
 	}
 
+	o := Get()
 	apply(change)
 	err = save()
 	if err != nil {
@@ -215,7 +217,7 @@ func Write(change Config) error {
 	}
 
 	for _, f := range onChange {
-		err = f(config)
+		err = f(o, change)
 		if err != nil {
 			return apperror.Wrap(err)
 		}
