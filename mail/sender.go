@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/jordan-wright/email"
+	"github.com/Valentin-Kaiser/go-core/mail/internal/email"
 	"github.com/rs/zerolog/log"
 )
 
-// smtpSender implements the Sender interface using jordan-wright/email
+// smtpSender implements the Sender interface using internal email package
 type smtpSender struct {
 	config          ClientConfig
 	templateManager *TemplateManager
@@ -40,7 +40,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 		return apperror.Wrap(err)
 	}
 
-	// Create email using jordan-wright/email
+	// Create email using internal email package
 	emailMsg, err := s.createEmail(message)
 	if err != nil {
 		return apperror.Wrap(err)
@@ -124,7 +124,7 @@ func (s *smtpSender) processTemplate(message *Message) error {
 
 // createEmail creates an email.Email from our Message
 func (s *smtpSender) createEmail(message *Message) (*email.Email, error) {
-	emailMsg := email.NewEmail()
+	emailMsg := email.New()
 
 	// Set From address
 	from := message.From
