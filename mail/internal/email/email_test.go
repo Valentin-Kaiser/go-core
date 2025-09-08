@@ -218,7 +218,7 @@ func TestEmail_Send_ValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.email.Send("localhost:587", nil)
+			err := tt.email.Send("localhost:587", nil, "")
 			if err == nil {
 				t.Fatal("Expected error for invalid email configuration")
 			}

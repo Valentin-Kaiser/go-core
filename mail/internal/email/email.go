@@ -324,7 +324,7 @@ func (e *Email) Bytes() ([]byte, error) {
 
 // Send an email using the given host and SMTP auth (optional), returns any error thrown by smtp.SendMail
 // This function merges the To, Cc, and Bcc fields and calls the smtp.SendMail function using the Email.Bytes() output as the message
-func (e *Email) Send(address string, auth smtp.Auth) error {
+func (e *Email) Send(address string, auth smtp.Auth, helo string) error {
 	to := make([]string, 0, len(e.To)+len(e.Cc)+len(e.Bcc))
 	to = append(append(append(to, e.To...), e.Cc...), e.Bcc...)
 	for i := 0; i < len(to); i++ {
@@ -345,15 +345,77 @@ func (e *Email) Send(address string, auth smtp.Auth) error {
 	if err != nil {
 		return apperror.Wrap(err)
 	}
-	err = smtp.SendMail(address, auth, sender, to, raw)
-	if err != nil {
-		return apperror.Wrap(err)
+
+	if helo == "" {
+		err = smtp.SendMail(address, auth, sender, to, raw)
+		if err != nil {
+			return apperror.Wrap(err)
+		}
+		return nil
 	}
+
+	// Use custom HELO with lower-level SMTP client
+	conn, err := smtp.Dial(address)
+	if err != nil {
+		return apperror.NewError("could not dial SMTP connection").AddError(err)
+	}
+	defer conn.Close()
+
+	// Send custom HELO
+	err = conn.Hello(helo)
+	if err != nil {
+		return apperror.NewError("could not send HELO command").AddError(err)
+	}
+
+	if auth != nil {
+		err = conn.Auth(auth)
+		if err != nil {
+			return apperror.NewError("could not authenticate SMTP client").AddError(err)
+		}
+	}
+
+	err = conn.Mail(sender)
+	if err != nil {
+		return apperror.NewError("could not set SMTP sender").AddError(err)
+	}
+
+	for _, addr := range to {
+		err = conn.Rcpt(addr)
+		if err != nil {
+			return apperror.NewError("could not add SMTP recipient").AddError(err)
+		}
+	}
+
+	w, err := conn.Data()
+	if err != nil {
+		return apperror.NewError("could not create SMTP data writer").AddError(err)
+	}
+
+	_, err = w.Write(raw)
+	if err != nil {
+		return apperror.NewError("could not write SMTP data").AddError(err)
+	}
+
+	err = w.Close()
+	if err != nil {
+		return apperror.NewError("could not close SMTP data writer").AddError(err)
+	}
+
+	err = conn.Quit()
+	if err != nil {
+		return apperror.NewError("could not quit SMTP session").AddError(err)
+	}
+
 	return nil
 }
 
 // SendWithTLS sends an email over tls with an optional TLS config.
 func (e *Email) SendWithTLS(address string, auth smtp.Auth, config *tls.Config) error {
+	return e.SendWithTLSAndHelo(address, auth, config, "")
+}
+
+// SendWithTLSAndHelo sends an email over TLS with a custom HELO hostname (internal method)
+func (e *Email) SendWithTLSAndHelo(address string, auth smtp.Auth, config *tls.Config, helo string) error {
 	to := make([]string, 0, len(e.To)+len(e.Cc)+len(e.Bcc))
 	to = append(append(append(to, e.To...), e.Cc...), e.Bcc...)
 	for i := 0; i < len(to); i++ {
@@ -385,6 +447,15 @@ func (e *Email) SendWithTLS(address string, auth smtp.Auth, config *tls.Config) 
 		return apperror.NewError("could not create SMTP client").AddError(err)
 	}
 	defer c.Quit()
+
+	// Send custom HELO if provided (after connection but before auth)
+	if helo != "" {
+		err = c.Hello(helo)
+		if err != nil {
+			return apperror.NewError("could not send HELO command").AddError(err)
+		}
+	}
+
 	if auth != nil {
 		err = c.Auth(auth)
 		if err != nil {
@@ -422,6 +493,11 @@ func (e *Email) SendWithTLS(address string, auth smtp.Auth, config *tls.Config) 
 
 // SendWithStartTLS sends an email over TLS using STARTTLS with an optional TLS config.
 func (e *Email) SendWithStartTLS(address string, auth smtp.Auth, config *tls.Config) error {
+	return e.SendWithStartTLSAndHelo(address, auth, config, "")
+}
+
+// SendWithStartTLSAndHelo sends an email over TLS using STARTTLS with a custom HELO hostname (internal method)
+func (e *Email) SendWithStartTLSAndHelo(address string, auth smtp.Auth, config *tls.Config, helo string) error {
 	to := make([]string, 0, len(e.To)+len(e.Cc)+len(e.Bcc))
 	to = append(append(append(to, e.To...), e.Cc...), e.Bcc...)
 	for i := 0; i < len(to); i++ {
@@ -448,6 +524,15 @@ func (e *Email) SendWithStartTLS(address string, auth smtp.Auth, config *tls.Con
 		return apperror.NewError("could not dial SMTP connection").AddError(err)
 	}
 	defer conn.Close()
+
+	// Send custom HELO if provided (before STARTTLS)
+	if helo != "" {
+		err = conn.Hello(helo)
+		if err != nil {
+			return apperror.NewError("could not send HELO command").AddError(err)
+		}
+	}
+
 	err = conn.StartTLS(config)
 	if err != nil {
 		return apperror.NewError("could not start TLS").AddError(err)
