@@ -20,7 +20,7 @@ type smtpSender struct {
 	templateManager *TemplateManager
 }
 
-// NewSMTPSender creates a new SMTP sender
+// NewSMTPSender creates a new SMTP sender with configurable security
 func NewSMTPSender(config ClientConfig, templateManager *TemplateManager) Sender {
 	return &smtpSender{
 		config:          config,
@@ -252,18 +252,18 @@ func (s *smtpSender) createAuth() smtp.Auth {
 // sendWithTLS sends email with TLS encryption
 func (s *smtpSender) sendWithTLS(emailMsg *email.Email, addr string, auth smtp.Auth) error {
 	tlsConfig := s.config.TLSConfig()
-	return emailMsg.SendWithTLS(addr, auth, tlsConfig)
+	return emailMsg.SendWithTLS(addr, auth, tlsConfig, s.config.FQDN)
 }
 
 // sendWithStartTLS sends email with STARTTLS encryption
 func (s *smtpSender) sendWithStartTLS(emailMsg *email.Email, addr string, auth smtp.Auth) error {
 	tlsConfig := s.config.TLSConfig()
-	return emailMsg.SendWithStartTLS(addr, auth, tlsConfig)
+	return emailMsg.SendWithStartTLS(addr, auth, tlsConfig, s.config.FQDN)
 }
 
 // sendPlain sends email without encryption
 func (s *smtpSender) sendPlain(emailMsg *email.Email, addr string, auth smtp.Auth) error {
-	return emailMsg.Send(addr, auth)
+	return emailMsg.Send(addr, auth, s.config.FQDN)
 }
 
 // getPriorityHeader converts priority to email header value

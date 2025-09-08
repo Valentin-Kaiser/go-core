@@ -410,12 +410,7 @@ func (e *Email) Send(address string, auth smtp.Auth, helo string) error {
 }
 
 // SendWithTLS sends an email over tls with an optional TLS config.
-func (e *Email) SendWithTLS(address string, auth smtp.Auth, config *tls.Config) error {
-	return e.SendWithTLSAndHelo(address, auth, config, "")
-}
-
-// SendWithTLSAndHelo sends an email over TLS with a custom HELO hostname (internal method)
-func (e *Email) SendWithTLSAndHelo(address string, auth smtp.Auth, config *tls.Config, helo string) error {
+func (e *Email) SendWithTLS(address string, auth smtp.Auth, config *tls.Config, helo string) error {
 	to := make([]string, 0, len(e.To)+len(e.Cc)+len(e.Bcc))
 	to = append(append(append(to, e.To...), e.Cc...), e.Bcc...)
 	for i := 0; i < len(to); i++ {
@@ -492,12 +487,7 @@ func (e *Email) SendWithTLSAndHelo(address string, auth smtp.Auth, config *tls.C
 }
 
 // SendWithStartTLS sends an email over TLS using STARTTLS with an optional TLS config.
-func (e *Email) SendWithStartTLS(address string, auth smtp.Auth, config *tls.Config) error {
-	return e.SendWithStartTLSAndHelo(address, auth, config, "")
-}
-
-// SendWithStartTLSAndHelo sends an email over TLS using STARTTLS with a custom HELO hostname (internal method)
-func (e *Email) SendWithStartTLSAndHelo(address string, auth smtp.Auth, config *tls.Config, helo string) error {
+func (e *Email) SendWithStartTLS(address string, auth smtp.Auth, config *tls.Config, helo string) error {
 	to := make([]string, 0, len(e.To)+len(e.Cc)+len(e.Bcc))
 	to = append(append(append(to, e.To...), e.Cc...), e.Bcc...)
 	for i := 0; i < len(to); i++ {

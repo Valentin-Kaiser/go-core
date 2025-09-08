@@ -228,7 +228,7 @@ func TestEmail_Send_ValidationErrors(t *testing.T) {
 
 func TestEmail_SendWithTLS_ValidationErrors(t *testing.T) {
 	e := &email.Email{}
-	err := e.SendWithTLS("localhost:587", nil, &tls.Config{})
+	err := e.SendWithTLS("localhost:587", nil, &tls.Config{}, "")
 	if err == nil {
 		t.Fatal("Expected error for empty email")
 	}
@@ -236,7 +236,7 @@ func TestEmail_SendWithTLS_ValidationErrors(t *testing.T) {
 
 func TestEmail_SendWithStartTLS_ValidationErrors(t *testing.T) {
 	e := &email.Email{}
-	err := e.SendWithStartTLS("localhost:587", nil, &tls.Config{})
+	err := e.SendWithStartTLS("localhost:587", nil, &tls.Config{}, "")
 	if err == nil {
 		t.Fatal("Expected error for empty email")
 	}

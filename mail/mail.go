@@ -10,6 +10,7 @@
 //   - Attachment support
 //   - Statistics tracking
 //   - Retry mechanisms with exponential backoff
+//   - Configurable security features for both client and server (HELO validation, IP filtering, rate limiting)
 //
 // Example Usage:
 //

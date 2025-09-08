@@ -24,7 +24,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// smtpServer implements the Server interface
+// smtpServer manages SMTP server operations and handles incoming messages
 type smtpServer struct {
 	config           ServerConfig
 	server           *smtp.Server
@@ -37,6 +37,7 @@ type smtpServer struct {
 	ctx              context.Context    // Context for server lifecycle
 	cancel           context.CancelFunc // Cancel function for server lifecycle
 	wg               sync.WaitGroup     // WaitGroup for graceful shutdown
+	security         *SecurityManager   // Security manager for validations
 }
 
 // handlerTask represents a pending notification handler task
@@ -64,6 +65,7 @@ func NewSMTPServer(config ServerConfig, manager *Manager) Server {
 		handlerQueue:     make(chan handlerTask, config.MaxConcurrentHandlers*2), // Queue size = 2x semaphore size
 		ctx:              ctx,
 		cancel:           cancel,
+		security:         NewSecurityManager(config.Security),
 	}
 
 	// Start worker pool for handling queued notification tasks
@@ -379,27 +381,93 @@ type smtpBackend struct {
 
 // NewSession creates a new SMTP session
 func (b *smtpBackend) NewSession(conn *smtp.Conn) (smtp.Session, error) {
+	remoteAddr := conn.Conn().RemoteAddr().String()
+
 	log.Trace().
-		Str("remote_addr", conn.Conn().RemoteAddr().String()).
+		Str("remote_addr", remoteAddr).
 		Msg("[Mail] New SMTP session")
 
+	// Validate connection using security manager
+	if err := b.server.security.ValidateConnection(remoteAddr); err != nil {
+		log.Warn().
+			Str("remote_addr", remoteAddr).
+			Err(err).
+			Msg("[Mail] Connection rejected by security manager")
+		return nil, err
+	}
+
 	return &smtpSession{
-		server: b.server,
-		conn:   conn,
+		server:     b.server,
+		conn:       conn,
+		remoteAddr: remoteAddr,
 	}, nil
+}
+
+// AuthHandler wraps the backend with HELO validation capability
+type AuthHandler struct {
+	backend *smtpBackend
+}
+
+// NewAuthHandler creates a new auth handler with HELO validation
+func NewAuthHandler(backend *smtpBackend) *AuthHandler {
+	return &AuthHandler{backend: backend}
+}
+
+// ValidateHelo validates HELO/EHLO commands - this would be called by custom SMTP server implementation
+func (h *AuthHandler) ValidateHelo(hostname, remoteAddr string) error {
+	return h.backend.server.security.ValidateHelo(hostname, remoteAddr)
 }
 
 // smtpSession implements the smtp.Session interface
 type smtpSession struct {
 	server        *smtpServer
 	conn          *smtp.Conn
+	remoteAddr    string
 	authenticated bool
 	from          string
 	to            []string
+	heloValidated bool
+}
+
+// validateHeloIfNeeded validates HELO hostname on first SMTP command
+func (s *smtpSession) validateHeloIfNeeded() error {
+	if s.heloValidated || !s.server.config.Security.HeloValidation {
+		return nil
+	}
+
+	// Get the HELO hostname from the connection
+	// The go-smtp library stores this in the connection's Hostname() method
+	hostname := s.conn.Hostname()
+
+	if err := s.server.security.ValidateHelo(hostname, s.remoteAddr); err != nil {
+		log.Warn().
+			Str("remote_addr", s.remoteAddr).
+			Str("hostname", hostname).
+			Err(err).
+			Msg("[Mail] HELO validation failed")
+		return err
+	}
+
+	s.heloValidated = true
+	return nil
 }
 
 // AuthPlain handles PLAIN authentication
 func (s *smtpSession) AuthPlain(username, password string) error {
+	// Validate HELO first if needed
+	if err := s.validateHeloIfNeeded(); err != nil {
+		return err
+	}
+
+	// Check rate limiting first
+	if err := s.server.security.CheckRateLimit(s.remoteAddr); err != nil {
+		log.Warn().
+			Str("remote_addr", s.remoteAddr).
+			Str("username", username).
+			Msg("[Mail] Authentication rate limit exceeded")
+		return smtp.ErrAuthFailed
+	}
+
 	if !s.server.config.Auth {
 		return smtp.ErrAuthUnsupported
 	}
@@ -410,8 +478,15 @@ func (s *smtpSession) AuthPlain(username, password string) error {
 
 	if username == s.server.config.Username && password == s.server.config.Password {
 		s.authenticated = true
+		s.server.security.RecordAuthSuccess(s.remoteAddr)
 		log.Trace().Str("username", username).Msg("[Mail] SMTP authentication successful")
 		return nil
+	}
+
+	// Record auth failure and apply delay
+	s.server.security.RecordAuthFailure(s.remoteAddr)
+	if delay := s.server.security.GetAuthFailureDelay(); delay > 0 {
+		time.Sleep(delay)
 	}
 
 	log.Warn().Str("username", username).Msg("[Mail] SMTP authentication failed")
@@ -420,6 +495,26 @@ func (s *smtpSession) AuthPlain(username, password string) error {
 
 // Mail handles the MAIL FROM command
 func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
+	// Validate HELO first if needed
+	if err := s.validateHeloIfNeeded(); err != nil {
+		return err
+	}
+
+	// Check rate limiting
+	if err := s.server.security.CheckRateLimit(s.remoteAddr); err != nil {
+		log.Warn().
+			Str("remote_addr", s.remoteAddr).
+			Str("from", from).
+			Msg("[Mail] MAIL command rate limit exceeded")
+		return err
+	}
+
+	// Check authentication requirement
+	if s.server.config.Security.RequireAuth && !s.authenticated {
+		log.Warn().Str("from", from).Msg("[Mail] Authentication required for MAIL command")
+		return smtp.ErrAuthRequired
+	}
+
 	if s.server.config.Auth && !s.authenticated {
 		log.Warn().Str("from", from).Msg("[Mail] Unauthenticated MAIL command rejected")
 		return smtp.ErrAuthRequired
@@ -432,6 +527,26 @@ func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
 
 // Rcpt handles the RCPT TO command
 func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
+	// Validate HELO first if needed
+	if err := s.validateHeloIfNeeded(); err != nil {
+		return err
+	}
+
+	// Check rate limiting
+	if err := s.server.security.CheckRateLimit(s.remoteAddr); err != nil {
+		log.Warn().
+			Str("remote_addr", s.remoteAddr).
+			Str("to", to).
+			Msg("[Mail] RCPT command rate limit exceeded")
+		return err
+	}
+
+	// Check authentication requirement
+	if s.server.config.Security.RequireAuth && !s.authenticated {
+		log.Warn().Str("to", to).Msg("[Mail] Authentication required for RCPT command")
+		return smtp.ErrAuthRequired
+	}
+
 	if s.server.config.Auth && !s.authenticated {
 		log.Warn().Str("to", to).Msg("[Mail] Unauthenticated RCPT command rejected")
 		return smtp.ErrAuthRequired
@@ -443,6 +558,11 @@ func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
 
 // Data handles the email data
 func (s *smtpSession) Data(r io.Reader) error {
+	// Validate HELO first if needed
+	if err := s.validateHeloIfNeeded(); err != nil {
+		return err
+	}
+
 	if s.server.config.Auth && !s.authenticated {
 		log.Warn().Msg("[Mail] Unauthenticated DATA command rejected")
 		return smtp.ErrAuthRequired
@@ -475,6 +595,8 @@ func (s *smtpSession) Reset() {
 
 // Logout handles session logout
 func (s *smtpSession) Logout() error {
+	// Clean up connection tracking in security manager
+	s.server.security.CloseConnection(s.remoteAddr)
 	log.Debug().Msg("[Mail] SMTP session logout")
 	return nil
 }
