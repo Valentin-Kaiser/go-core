@@ -11,6 +11,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+var fqdnPattern = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{1,}$`)
+
 // SecurityManager handles security validations and tracking for both SMTP client and server
 type SecurityManager struct {
 	config          SecurityConfig
@@ -371,7 +373,6 @@ func (sm *SecurityManager) isValidFQDN(hostname string) bool {
 	}
 
 	// Validate format using regex
-	fqdnPattern := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{1,}$`)
 	return fqdnPattern.MatchString(hostname)
 }
 

@@ -110,8 +110,6 @@ type SecurityConfig struct {
 	MaxAuthFailures int `yaml:"max_auth_failures" json:"max_auth_failures"`
 	// AuthFailureWindow is the time window to track auth failures
 	AuthFailureWindow time.Duration `yaml:"auth_failure_window" json:"auth_failure_window"`
-	// RequireAuth forces authentication for all connections
-	RequireAuth bool `yaml:"require_auth" json:"require_auth"`
 	// LogSecurityEvents enables detailed security logging
 	LogSecurityEvents bool `yaml:"log_security_events" json:"log_security_events"`
 }
@@ -184,7 +182,6 @@ func DefaultConfig() *Config {
 				AuthFailureDelay:    time.Second,
 				MaxAuthFailures:     5,
 				AuthFailureWindow:   15 * time.Minute,
-				RequireAuth:         false,
 				LogSecurityEvents:   true,
 			},
 		},

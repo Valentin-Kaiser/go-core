@@ -509,12 +509,6 @@ func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
 		return err
 	}
 
-	// Check authentication requirement
-	if s.server.config.Security.RequireAuth && !s.authenticated {
-		log.Warn().Str("from", from).Msg("[Mail] Authentication required for MAIL command")
-		return smtp.ErrAuthRequired
-	}
-
 	if s.server.config.Auth && !s.authenticated {
 		log.Warn().Str("from", from).Msg("[Mail] Unauthenticated MAIL command rejected")
 		return smtp.ErrAuthRequired
@@ -539,12 +533,6 @@ func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
 			Str("to", to).
 			Msg("[Mail] RCPT command rate limit exceeded")
 		return err
-	}
-
-	// Check authentication requirement
-	if s.server.config.Security.RequireAuth && !s.authenticated {
-		log.Warn().Str("to", to).Msg("[Mail] Authentication required for RCPT command")
-		return smtp.ErrAuthRequired
 	}
 
 	if s.server.config.Auth && !s.authenticated {
