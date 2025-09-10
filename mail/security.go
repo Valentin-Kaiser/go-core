@@ -9,25 +9,23 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/time/rate"
 )
 
 var fqdnPattern = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{1,}$`)
 
 // SecurityManager handles security validations and tracking for both SMTP client and server
 type SecurityManager struct {
-	config          SecurityConfig
-	ipConnections   map[string]int
-	ipRateLimit     map[string]*rateLimiter
+	config        SecurityConfig
+	ipConnections map[string]int
+	ipRateLimit   map[string]struct {
+		*rate.Limiter
+		last time.Time
+	}
 	authFailures    map[string]*authTracker
 	allowedNetworks []*net.IPNet
 	blockedNetworks []*net.IPNet
 	mutex           sync.RWMutex
-}
-
-// rateLimiter tracks rate limiting per IP
-type rateLimiter struct {
-	count       int
-	windowStart time.Time
 }
 
 // authTracker tracks authentication failures per IP
@@ -43,9 +41,12 @@ func NewSecurityManager(config SecurityConfig) *SecurityManager {
 	sm := &SecurityManager{
 		config:        config,
 		ipConnections: make(map[string]int),
-		ipRateLimit:   make(map[string]*rateLimiter),
-		authFailures:  make(map[string]*authTracker),
-		mutex:         sync.RWMutex{},
+		ipRateLimit: make(map[string]struct {
+			*rate.Limiter
+			last time.Time
+		}),
+		authFailures: make(map[string]*authTracker),
+		mutex:        sync.RWMutex{},
 	}
 
 	// Parse IP allowlist
@@ -219,28 +220,22 @@ func (sm *SecurityManager) CheckRateLimit(remoteAddr string) error {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 
-	now := time.Now()
 	limiter, exists := sm.ipRateLimit[host]
-
 	if !exists {
-		sm.ipRateLimit[host] = &rateLimiter{
-			count:       1,
-			windowStart: now,
+		sm.ipRateLimit[host] = struct {
+			*rate.Limiter
+			last time.Time
+		}{
+			Limiter: rate.NewLimiter(rate.Limit(sm.config.RateLimitPerIP), 1),
+			last:    time.Now(),
 		}
 		return nil
 	}
 
-	// Reset window if it's been more than a minute
-	if now.Sub(limiter.windowStart) > time.Minute {
-		limiter.count = 1
-		limiter.windowStart = now
-		return nil
-	}
-
-	limiter.count++
-	if limiter.count > sm.config.RateLimitPerIP {
+	limiter.last = time.Now()
+	if !limiter.Allow() {
 		if sm.config.LogSecurityEvents {
-			log.Warn().Str("ip", host).Int("count", limiter.count).Msg("[Mail] Rate limit exceeded")
+			log.Warn().Str("ip", host).Msg("[Mail] Rate limit exceeded")
 		}
 		return &SecurityError{Type: "rate_limit", Message: "Rate limit exceeded"}
 	}
@@ -387,7 +382,7 @@ func (sm *SecurityManager) cleanup() {
 
 		// Clean up rate limiters
 		for ip, limiter := range sm.ipRateLimit {
-			if now.Sub(limiter.windowStart) > 2*time.Minute {
+			if time.Since(limiter.last) > 2*time.Minute {
 				delete(sm.ipRateLimit, ip)
 			}
 		}

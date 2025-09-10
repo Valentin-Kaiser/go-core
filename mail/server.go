@@ -79,7 +79,7 @@ func (s *smtpServer) Start(_ context.Context) error {
 		return apperror.NewError("SMTP server is already running")
 	}
 	// Create SMTP server
-	s.server = smtp.NewServer(&smtpBackend{server: s})
+	s.server = smtp.NewServer(&backend{server: s})
 
 	// Configure server
 	s.server.Addr = fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
@@ -374,13 +374,13 @@ func (s *smtpServer) startWorkerPool() {
 	}
 }
 
-// smtpBackend implements the smtp.Backend interface
-type smtpBackend struct {
+// backend implements the smtp.Backend interface
+type backend struct {
 	server *smtpServer
 }
 
 // NewSession creates a new SMTP session
-func (b *smtpBackend) NewSession(conn *smtp.Conn) (smtp.Session, error) {
+func (b *backend) NewSession(conn *smtp.Conn) (smtp.Session, error) {
 	remoteAddr := conn.Conn().RemoteAddr().String()
 
 	log.Trace().
@@ -396,30 +396,15 @@ func (b *smtpBackend) NewSession(conn *smtp.Conn) (smtp.Session, error) {
 		return nil, err
 	}
 
-	return &smtpSession{
+	return &session{
 		server:     b.server,
 		conn:       conn,
 		remoteAddr: remoteAddr,
 	}, nil
 }
 
-// AuthHandler wraps the backend with HELO validation capability
-type AuthHandler struct {
-	backend *smtpBackend
-}
-
-// NewAuthHandler creates a new auth handler with HELO validation
-func NewAuthHandler(backend *smtpBackend) *AuthHandler {
-	return &AuthHandler{backend: backend}
-}
-
-// ValidateHelo validates HELO/EHLO commands - this would be called by custom SMTP server implementation
-func (h *AuthHandler) ValidateHelo(hostname, remoteAddr string) error {
-	return h.backend.server.security.ValidateHelo(hostname, remoteAddr)
-}
-
-// smtpSession implements the smtp.Session interface
-type smtpSession struct {
+// session implements the smtp.Session interface
+type session struct {
 	server        *smtpServer
 	conn          *smtp.Conn
 	remoteAddr    string
@@ -430,7 +415,7 @@ type smtpSession struct {
 }
 
 // validateHeloIfNeeded validates HELO hostname on first SMTP command
-func (s *smtpSession) validateHeloIfNeeded() error {
+func (s *session) validateHeloIfNeeded() error {
 	if s.heloValidated || !s.server.config.Security.HeloValidation {
 		return nil
 	}
@@ -453,7 +438,7 @@ func (s *smtpSession) validateHeloIfNeeded() error {
 }
 
 // AuthPlain handles PLAIN authentication
-func (s *smtpSession) AuthPlain(username, password string) error {
+func (s *session) AuthPlain(username, password string) error {
 	// Validate HELO first if needed
 	if err := s.validateHeloIfNeeded(); err != nil {
 		return err
@@ -494,7 +479,7 @@ func (s *smtpSession) AuthPlain(username, password string) error {
 }
 
 // Mail handles the MAIL FROM command
-func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
+func (s *session) Mail(from string, _ *smtp.MailOptions) error {
 	// Validate HELO first if needed
 	if err := s.validateHeloIfNeeded(); err != nil {
 		return err
@@ -520,7 +505,7 @@ func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
 }
 
 // Rcpt handles the RCPT TO command
-func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
+func (s *session) Rcpt(to string, _ *smtp.RcptOptions) error {
 	// Validate HELO first if needed
 	if err := s.validateHeloIfNeeded(); err != nil {
 		return err
@@ -545,7 +530,7 @@ func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
 }
 
 // Data handles the email data
-func (s *smtpSession) Data(r io.Reader) error {
+func (s *session) Data(r io.Reader) error {
 	// Validate HELO first if needed
 	if err := s.validateHeloIfNeeded(); err != nil {
 		return err
@@ -575,14 +560,14 @@ func (s *smtpSession) Data(r io.Reader) error {
 }
 
 // Reset resets the session
-func (s *smtpSession) Reset() {
+func (s *session) Reset() {
 	log.Debug().Msg("[Mail] SMTP session reset")
 	s.from = ""
 	s.to = nil
 }
 
 // Logout handles session logout
-func (s *smtpSession) Logout() error {
+func (s *session) Logout() error {
 	// Clean up connection tracking in security manager
 	s.server.security.CloseConnection(s.remoteAddr)
 	log.Debug().Msg("[Mail] SMTP session logout")

@@ -230,7 +230,11 @@ func (e *Email) Bytes() ([]byte, error) {
 		headers.Set("Content-Transfer-Encoding", "quoted-printable")
 	}
 
-	headerToBytes(buf, headers)
+	err = headerToBytes(buf, headers)
+	if err != nil {
+		return nil, apperror.Wrap(err)
+	}
+
 	_, err = io.WriteString(buf, "\r\n")
 	if err != nil {
 		return nil, apperror.NewError("could not write headers").AddError(err)
@@ -289,7 +293,10 @@ func (e *Email) Bytes() ([]byte, error) {
 					if err != nil {
 						return nil, apperror.NewError("could not create HTML attachment part").AddError(err)
 					}
-					base64Wrap(ap, a.Content)
+					err = base64Wrap(ap, a.Content)
+					if err != nil {
+						return nil, apperror.Wrap(err)
+					}
 				}
 
 				if isMixed || isAlternative {
@@ -311,7 +318,10 @@ func (e *Email) Bytes() ([]byte, error) {
 		if err != nil {
 			return nil, apperror.NewError("could not create attachment part").AddError(err)
 		}
-		base64Wrap(ap, a.Content)
+		err = base64Wrap(ap, a.Content)
+		if err != nil {
+			return nil, apperror.Wrap(err)
+		}
 	}
 	if isMixed || isAlternative || isRelated {
 		err := w.Close()
@@ -783,7 +793,7 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader) ([]*part, error) {
 
 // base64Wrap encodes the attachment content, and wraps it according to RFC 2045 standards (every 76 chars)
 // The output is then written to the specified io.Writer
-func base64Wrap(w io.Writer, b []byte) {
+func base64Wrap(w io.Writer, b []byte) error {
 	// 57 raw bytes per 76-byte base64 line.
 	const maxRaw = 57
 	// Buffer for each line, including trailing CRLF.
@@ -792,7 +802,10 @@ func base64Wrap(w io.Writer, b []byte) {
 	// Process raw chunks until there's no longer enough to fill a line.
 	for len(b) >= maxRaw {
 		base64.StdEncoding.Encode(buf, b[:maxRaw])
-		w.Write(buf)
+		_, err := w.Write(buf)
+		if err != nil {
+			return apperror.NewError("could not write base64 wrapped data").AddError(err)
+		}
 		b = b[maxRaw:]
 	}
 	// Handle the last chunk of bytes.
@@ -800,28 +813,53 @@ func base64Wrap(w io.Writer, b []byte) {
 		out := buf[:base64.StdEncoding.EncodedLen(len(b))]
 		base64.StdEncoding.Encode(out, b)
 		out = append(out, "\r\n"...)
-		w.Write(out)
+		_, err := w.Write(out)
+		if err != nil {
+			return apperror.NewError("could not write base64 wrapped data").AddError(err)
+		}
 	}
+
+	return nil
 }
 
 // headerToBytes renders "header" to "buff". If there are multiple values for a
 // field, multiple "Field: value\r\n" lines will be emitted.
-func headerToBytes(buff io.Writer, header textproto.MIMEHeader) {
+func headerToBytes(buff io.Writer, header textproto.MIMEHeader) error {
 	for field, vals := range header {
 		for _, subval := range vals {
-			io.WriteString(buff, field)
-			io.WriteString(buff, ": ")
+			_, err := io.WriteString(buff, field)
+			if err != nil {
+				return apperror.NewError("could not write header field").AddError(err)
+			}
+			_, err = io.WriteString(buff, ": ")
+			if err != nil {
+				return apperror.NewError("could not write header field separator").AddError(err)
+			}
 			switch {
 			case field == "Content-Type" || field == "Content-Disposition":
-				buff.Write([]byte(subval))
+				_, err := buff.Write([]byte(subval))
+				if err != nil {
+					return apperror.NewError("could not write header field value").AddError(err)
+				}
 			case field == "From" || field == "To" || field == "Cc" || field == "Bcc":
-				buff.Write([]byte(subval))
+				_, err := buff.Write([]byte(subval))
+				if err != nil {
+					return apperror.NewError("could not write header field value").AddError(err)
+				}
 			default:
-				buff.Write([]byte(mime.QEncoding.Encode("UTF-8", subval)))
+				_, err := buff.Write([]byte(mime.QEncoding.Encode("UTF-8", subval)))
+				if err != nil {
+					return apperror.NewError("could not write header field value").AddError(err)
+				}
 			}
-			io.WriteString(buff, "\r\n")
+			_, err = io.WriteString(buff, "\r\n")
+			if err != nil {
+				return apperror.NewError("could not write header field terminator").AddError(err)
+			}
 		}
 	}
+
+	return nil
 }
 
 func generateMessageID() (string, error) {
@@ -867,7 +905,7 @@ type trimReader struct {
 func (tr *trimReader) Read(buf []byte) (int, error) {
 	n, err := tr.rd.Read(buf)
 	if err != nil {
-		return n, apperror.NewError("could not read from underlying reader").AddError(err)
+		return n, err
 	}
 	if !tr.trimmed {
 		t := bytes.TrimLeftFunc(buf[:n], unicode.IsSpace)
