@@ -127,13 +127,13 @@ func NewFromReader(r io.Reader) (*Email, error) {
 
 		contentType, _, err = mime.ParseMediaType(p.header.Get("Content-Type"))
 		if err != nil {
-			return msg, apperror.NewErrorf("Could not parse Content-Type header with value %q", p.header.Get("Content-Type")).AddError(err)
+			return msg, apperror.NewErrorf("could not parse Content-Type header with value %q", p.header.Get("Content-Type")).AddError(err)
 		}
 
 		if cd := p.header.Get("Content-Disposition"); cd != "" {
 			cd, params, err := mime.ParseMediaType(p.header.Get("Content-Disposition"))
 			if err != nil {
-				return msg, apperror.NewErrorf("Could not parse Content-Disposition header with value %q", p.header.Get("Content-Disposition")).AddError(err)
+				return msg, apperror.NewErrorf("could not parse Content-Disposition header with value %q", p.header.Get("Content-Disposition")).AddError(err)
 			}
 			filename, filenameDefined := params["filename"]
 			if cd == "attachment" || (cd == "inline" && filenameDefined) {
@@ -728,7 +728,7 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader) ([]*part, error) {
 	}
 	ct, params, err := mime.ParseMediaType(hs.Get("Content-Type"))
 	if err != nil {
-		return ps, apperror.NewErrorf("Could not parse Content-Type header with value %q", hs.Get("Content-Type")).AddError(err)
+		return ps, apperror.NewErrorf("could not parse Content-Type header with value %q", hs.Get("Content-Type")).AddError(err)
 	}
 	if strings.HasPrefix(ct, "multipart/") {
 		if _, ok := params["boundary"]; !ok {
@@ -749,7 +749,7 @@ func parseMIMEParts(hs textproto.MIMEHeader, b io.Reader) ([]*part, error) {
 			}
 			subct, _, err := mime.ParseMediaType(p.Header.Get("Content-Type"))
 			if err != nil {
-				return ps, apperror.NewErrorf("Could not parse Content-Type header with value %q", p.Header.Get("Content-Type")).AddError(err)
+				return ps, apperror.NewErrorf("could not parse Content-Type header with value %q", p.Header.Get("Content-Type")).AddError(err)
 			}
 			if strings.HasPrefix(subct, "multipart/") {
 				sps, err := parseMIMEParts(p.Header, p)

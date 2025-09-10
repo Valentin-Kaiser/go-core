@@ -12,7 +12,11 @@ import (
 	"golang.org/x/time/rate"
 )
 
-var fqdnPattern = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{1,}$`)
+// FQDNPattern validates a fully qualified domain name (FQDN) with the following rules:
+// - One or more labels separated by dots.
+// - Each label is 1-63 characters: alphanumeric and hyphens, but cannot start or end with a hyphen.
+// - The final label (TLD) must be alphabetic and at least one character.
+var FQDNPattern = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{1,}$`)
 
 // SecurityManager handles security validations and tracking for both SMTP client and server
 type SecurityManager struct {
@@ -368,7 +372,7 @@ func (sm *SecurityManager) isValidFQDN(hostname string) bool {
 	}
 
 	// Validate format using regex
-	return fqdnPattern.MatchString(hostname)
+	return FQDNPattern.MatchString(hostname)
 }
 
 // cleanup periodically cleans up old entries
