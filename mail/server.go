@@ -279,7 +279,7 @@ func (s *smtpServer) generateSelfSignedCert() (tls.Certificate, error) {
 			log.Warn().Err(err).Msg("[Mail] Failed to create certificate directory")
 			goto createTLS
 		}
-		
+
 		if err := os.WriteFile(s.config.CertFile, certPEM.Bytes(), 0600); err != nil {
 			log.Warn().Err(err).Msg("[Mail] Failed to save certificate file")
 		}
@@ -289,7 +289,7 @@ func (s *smtpServer) generateSelfSignedCert() (tls.Certificate, error) {
 		}
 	}
 
-	createTLS:
+createTLS:
 	// Create TLS certificate
 	cert, err := tls.X509KeyPair(certPEM.Bytes(), keyPEM.Bytes())
 	if err != nil {

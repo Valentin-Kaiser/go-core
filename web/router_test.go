@@ -13,7 +13,7 @@ func TestRouterUnregisterHandler(t *testing.T) {
 	router := web.NewRouter()
 
 	// Register test routes
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("test"))
 	})
 
@@ -46,7 +46,7 @@ func TestRouterUnregisterAllHandler(t *testing.T) {
 	router := web.NewRouter()
 
 	// Register test routes
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("test"))
 	})
 
@@ -55,7 +55,7 @@ func TestRouterUnregisterAllHandler(t *testing.T) {
 	router.Handle("/test3", handler)
 
 	// Add status callback
-	router.OnStatus("/test1", 200, func(w http.ResponseWriter, r *http.Request) {})
+	router.OnStatus("/test1", 200, func(_ http.ResponseWriter, _ *http.Request) {})
 
 	// Unregister all routes
 	router.UnregisterAllHandler()
@@ -68,7 +68,7 @@ func TestRouterUnregisterAllHandler(t *testing.T) {
 
 	// Test that all routes return 404
 	for _, path := range []string{"/test1", "/test2", "/test3"} {
-		req := httptest.NewRequest("GET", path, nil)
+		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		if w.Code != http.StatusNotFound {
@@ -81,7 +81,7 @@ func TestRouterConcurrentAccess(t *testing.T) {
 	router := web.NewRouter()
 
 	// Test concurrent registration and unregistration
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("test"))
 	})
 
@@ -96,7 +96,7 @@ func TestRouterConcurrentAccess(t *testing.T) {
 	// Goroutine 1: Make requests
 	go func() {
 		for i := 0; i < 100; i++ {
-			req := httptest.NewRequest("GET", "/test0", nil)
+			req := httptest.NewRequest(http.MethodGet, "/test0", nil)
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 		}

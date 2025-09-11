@@ -209,6 +209,7 @@ func (c *ClientConfig) TLSConfig() *tls.Config {
 	}
 }
 
+// Validate checks the client configuration for errors
 func (c *ClientConfig) Validate() error {
 	if c.Host == "" {
 		return apperror.NewError("SMTP host is required")
@@ -240,6 +241,7 @@ func (c *ServerConfig) TLSConfig() *tls.Config {
 	}
 }
 
+// Validate checks the server configuration for errors
 func (c *ServerConfig) Validate() error {
 	if c.Host == "" {
 		return apperror.NewError("SMTP server host is required")
@@ -256,6 +258,7 @@ func (c *ServerConfig) Validate() error {
 	return nil
 }
 
+// Validate checks the queue configuration for errors
 func (c *QueueConfig) Validate() error {
 	if c.QueueName == "" {
 		return apperror.NewError("Queue name is required")
@@ -269,6 +272,7 @@ func (c *QueueConfig) Validate() error {
 	return nil
 }
 
+// Validate checks the template configuration for errors
 func (c *TemplateConfig) Validate() error {
 	if c.DefaultTemplate == "" {
 		return apperror.NewError("Default template is required")
@@ -276,6 +280,7 @@ func (c *TemplateConfig) Validate() error {
 	return nil
 }
 
+// Validate checks the configuration for errors
 func (c *Config) Validate() error {
 	if err := c.Client.Validate(); err != nil {
 		return apperror.Wrap(err)

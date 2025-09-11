@@ -1,3 +1,5 @@
+// Package email allows to send email messages.
+// The package is used internally by the mail package.
 package email
 
 import (
@@ -26,8 +28,10 @@ import (
 )
 
 const (
-	MaxLineLength      = 76                             // MaxLineLength is the maximum line length per RFC 2045
-	DefaultContentType = "text/plain; charset=us-ascii" // DefaultContentType is the default Content-Type according to RFC 2045, section 5.2
+	// MaxLineLength is the maximum line length per RFC 2045
+	MaxLineLength = 76
+	// DefaultContentType is the default Content-Type according to RFC 2045, section 5.2
+	DefaultContentType = "text/plain; charset=us-ascii"
 )
 
 var maxBigInt = big.NewInt(math.MaxInt64)
@@ -144,10 +148,10 @@ func NewFromReader(r io.Reader) (*Email, error) {
 				continue
 			}
 		}
-		switch {
-		case contentType == "text/plain":
+		switch contentType {
+		case "text/plain":
 			msg.Text = p.body
-		case contentType == "text/html":
+		case "text/html":
 			msg.HTML = p.body
 		}
 	}
@@ -174,11 +178,11 @@ func (e *Email) Attach(r io.Reader, filename string, contentType string) (*Attac
 // AttachFile is used to attach content to the email.
 // It attempts to open the file referenced by filename and, if successful, creates an Attachment.
 func (e *Email) AttachFile(filename string) (*Attachment, error) {
-	f, err := os.Open(filename)
+	f, err := os.Open(filepath.Clean(filename))
 	if err != nil {
 		return nil, apperror.NewError("could not open attachment file").AddError(err)
 	}
-	defer f.Close()
+	defer apperror.Catch(f.Close, "could not close attachment file")
 
 	ct := mime.TypeByExtension(filepath.Ext(filename))
 	basename := filepath.Base(filename)
@@ -301,7 +305,10 @@ func (e *Email) Bytes() ([]byte, error) {
 				}
 
 				if isMixed || isAlternative {
-					relatedWriter.Close()
+					err = relatedWriter.Close()
+					if err != nil {
+						return nil, apperror.NewError("could not close multipart/related part").AddError(err)
+					}
 				}
 			}
 		}
@@ -370,7 +377,7 @@ func (e *Email) Send(address string, auth smtp.Auth, helo string) error {
 	if err != nil {
 		return apperror.NewError("could not dial SMTP connection").AddError(err)
 	}
-	defer conn.Close()
+	defer apperror.Catch(conn.Close, "could not close SMTP connection")
 
 	// Send custom HELO
 	err = conn.Hello(helo)
@@ -447,12 +454,12 @@ func (e *Email) SendWithTLS(address string, auth smtp.Auth, config *tls.Config, 
 	if err != nil {
 		return apperror.NewError("could not dial TLS connection").AddError(err)
 	}
-	defer conn.Close()
+	defer apperror.Catch(conn.Close, "could not close TLS connection")
 	c, err := smtp.NewClient(conn, strings.Split(address, ":")[0])
 	if err != nil {
 		return apperror.NewError("could not create SMTP client").AddError(err)
 	}
-	defer c.Quit()
+	defer apperror.Catch(c.Quit, "could not quit SMTP session")
 
 	// Send custom HELO if provided (after connection but before auth)
 	if helo != "" {
@@ -524,7 +531,7 @@ func (e *Email) SendWithStartTLS(address string, auth smtp.Auth, config *tls.Con
 	if err != nil {
 		return apperror.NewError("could not dial SMTP connection").AddError(err)
 	}
-	defer conn.Close()
+	defer apperror.Catch(conn.Close, "could not close SMTP connection")
 
 	// Send custom HELO if provided (before STARTTLS)
 	if helo != "" {
@@ -836,13 +843,13 @@ func headerToBytes(buff io.Writer, header textproto.MIMEHeader) error {
 			if err != nil {
 				return apperror.NewError("could not write header field separator").AddError(err)
 			}
-			switch {
-			case field == "Content-Type" || field == "Content-Disposition":
+			switch field {
+			case "Content-Type", "Content-Disposition":
 				_, err := buff.Write([]byte(subval))
 				if err != nil {
 					return apperror.NewError("could not write header field value").AddError(err)
 				}
-			case field == "From" || field == "To" || field == "Cc" || field == "Bcc":
+			case "From", "To", "Cc", "Bcc":
 				_, err := buff.Write([]byte(subval))
 				if err != nil {
 					return apperror.NewError("could not write header field value").AddError(err)

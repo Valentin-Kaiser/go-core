@@ -157,7 +157,7 @@ func (router *Router) UnregisterHandler(patterns []string) {
 	router.rebuildMux()
 }
 
-// UnregisterAll removes all routes from the router
+// UnregisterAllHandler removes all routes from the router
 // It clears all route-related maps and creates a new empty ServeMux
 func (router *Router) UnregisterAllHandler() {
 	router.mutex.Lock()

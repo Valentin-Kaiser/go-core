@@ -424,11 +424,11 @@ func TestManagerSendAsyncQueueDisabled(t *testing.T) {
 	}
 }
 
-func TestManagerAddNotificationHandler(t *testing.T) {
+func TestManagerAddNotificationHandler(_ *testing.T) {
 	config := mail.DefaultConfig()
 	manager := mail.NewManager(config, nil)
 
-	handler := func(ctx context.Context, from string, to []string, data io.Reader) error {
+	handler := func(_ context.Context, _ string, to []string, _ io.Reader) error {
 		return nil
 	}
 

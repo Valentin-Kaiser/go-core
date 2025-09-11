@@ -47,6 +47,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// Changed checks if the configuration has changed
 func (c *Config) Changed(n *Config) bool {
 	if c.Driver != n.Driver {
 		return true

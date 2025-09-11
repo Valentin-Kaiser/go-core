@@ -59,17 +59,17 @@ func NewSecurityManager(config SecurityConfig) *SecurityManager {
 			sm.allowedNetworks = append(sm.allowedNetworks, network)
 			continue
 		}
-		
+
 		ip := net.ParseIP(ipStr)
 		if ip == nil {
 			continue
 		}
-		
+
 		// Single IP address - convert to /32 or /128 network
 		var network *net.IPNet
-		_, network, _ = net.ParseCIDR(ipStr + "/128")  // Default to IPv6
+		_, network, _ = net.ParseCIDR(ipStr + "/128") // Default to IPv6
 		if ip.To4() != nil {
-			_, network, _ = net.ParseCIDR(ipStr + "/32")  // Override for IPv4
+			_, network, _ = net.ParseCIDR(ipStr + "/32") // Override for IPv4
 		}
 		sm.allowedNetworks = append(sm.allowedNetworks, network)
 	}
@@ -80,17 +80,17 @@ func NewSecurityManager(config SecurityConfig) *SecurityManager {
 			sm.blockedNetworks = append(sm.blockedNetworks, network)
 			continue
 		}
-		
+
 		ip := net.ParseIP(ipStr)
 		if ip == nil {
 			continue
 		}
-		
+
 		// Single IP address - convert to /32 or /128 network
 		var network *net.IPNet
-		_, network, _ = net.ParseCIDR(ipStr + "/128")  // Default to IPv6
+		_, network, _ = net.ParseCIDR(ipStr + "/128") // Default to IPv6
 		if ip.To4() != nil {
-			_, network, _ = net.ParseCIDR(ipStr + "/32")  // Override for IPv4
+			_, network, _ = net.ParseCIDR(ipStr + "/32") // Override for IPv4
 		}
 		sm.blockedNetworks = append(sm.blockedNetworks, network)
 	}
@@ -154,7 +154,7 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 			}
 			return &SecurityError{Type: "auth_blocked", Message: "IP temporarily blocked due to authentication failures"}
 		}
-		
+
 		// Reset auth failure tracking after window expires
 		tracker.blocked = false
 		tracker.failures = 0

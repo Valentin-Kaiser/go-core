@@ -251,7 +251,7 @@ func (rc *RedisCache) GetMulti(ctx context.Context, keys []string) (map[string]i
 				rc.updateStats(func(s *Stats) { s.Hits++ })
 				continue
 			}
-			
+
 			rc.updateStats(func(s *Stats) { s.Misses++ })
 		}
 	}

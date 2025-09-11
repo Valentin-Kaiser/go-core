@@ -1,7 +1,6 @@
 package mail_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,7 +30,7 @@ func TestTemplateManager_WithTemplateFunc(t *testing.T) {
 
 	// Test adding custom template function
 	result := tm.WithTemplateFunc("uppercase", func(s string) string {
-		return fmt.Sprintf("%s", s) // Simple implementation
+		return s
 	})
 
 	if result != tm {
@@ -116,7 +115,7 @@ func TestTemplateManager_WithFileServer_ValidPath(t *testing.T) {
 	// Create a test template file
 	templateContent := `<html><body><h1>{{.Title}}</h1><p>{{.Content}}</p></body></html>`
 	templatePath := filepath.Join(tempDir, "test.html")
-	if err := os.WriteFile(templatePath, []byte(templateContent), 0644); err != nil {
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
 		t.Fatalf("Failed to write test template: %v", err)
 	}
 
@@ -255,7 +254,7 @@ func TestTemplateManager_NestedTemplates(t *testing.T) {
 	// Create a temporary directory with nested template structure
 	tempDir := t.TempDir()
 	subDir := filepath.Join(tempDir, "emails")
-	if err := os.MkdirAll(subDir, 0755); err != nil {
+	if err := os.MkdirAll(subDir, 0750); err != nil {
 		t.Fatalf("Failed to create subdirectory: %v", err)
 	}
 

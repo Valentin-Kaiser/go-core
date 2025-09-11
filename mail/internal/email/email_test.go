@@ -54,7 +54,7 @@ func TestEmail_AttachFile(t *testing.T) {
 	tempFile := filepath.Join(tempDir, "test.txt")
 	content := "test file content"
 
-	err := os.WriteFile(tempFile, []byte(content), 0644)
+	err := os.WriteFile(tempFile, []byte(content), 0600)
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}

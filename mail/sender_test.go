@@ -2,6 +2,7 @@ package mail_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -135,10 +136,6 @@ func TestSMTPSender_MessageValidation(t *testing.T) {
 				if err == nil {
 					t.Error("Expected validation error")
 				}
-				// Check if it's likely a validation error (happens quickly)
-			} else {
-				// Valid messages will fail due to network, but that's expected in tests
-				// We just want to verify validation doesn't fail
 			}
 		})
 	}
@@ -207,7 +204,7 @@ func TestSMTPSender_WithTemplate(t *testing.T) {
 	// Create a simple template
 	templateContent := `<html><body><h1>{{.Subject}}</h1><p>{{.Body}}</p></body></html>`
 	templatePath := tempDir + "/test.html"
-	if err := writeFile(templatePath, templateContent); err != nil {
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
 		t.Fatalf("Failed to create template: %v", err)
 	}
 
@@ -315,7 +312,7 @@ func TestSMTPSender_EncryptionMethods(t *testing.T) {
 	}
 }
 
-func TestSMTPSender_MessageWithAttachments(t *testing.T) {
+func TestSMTPSender_MessageWithAttachments(_ *testing.T) {
 	config := mail.ClientConfig{
 		Host:       "smtp.example.com",
 		Port:       587,
@@ -350,7 +347,7 @@ func TestSMTPSender_MessageWithAttachments(t *testing.T) {
 	_ = err
 }
 
-func TestSMTPSender_MessageWithHeaders(t *testing.T) {
+func TestSMTPSender_MessageWithHeaders(_ *testing.T) {
 	config := mail.ClientConfig{
 		Host:       "smtp.example.com",
 		Port:       587,
@@ -416,11 +413,4 @@ func TestSMTPSender_ContextCancellation(t *testing.T) {
 	if duration > 500*time.Millisecond {
 		t.Errorf("Send took too long despite context cancellation: %v", duration)
 	}
-}
-
-// Helper function to write file content
-func writeFile(path, content string) error {
-	// This is a simplified version - in real code would use os.WriteFile
-	// For now, just return nil to allow tests to compile
-	return nil
 }

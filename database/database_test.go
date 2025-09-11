@@ -157,7 +157,10 @@ func TestExecuteWithoutConnection(t *testing.T) {
 	// Ensure we're in a disconnected state for this test
 	// Only disconnect if currently connected to avoid hanging
 	if database.Connected() {
-		database.Disconnect()
+		err := database.Disconnect()
+		if err != nil {
+			t.Errorf("Disconnect should not return an error: %v", err)
+		}
 		time.Sleep(100 * time.Millisecond) // Wait for disconnection
 	}
 
@@ -184,7 +187,10 @@ func TestReconnect(t *testing.T) {
 func TestAwaitConnectionTimeout(t *testing.T) {
 	// Ensure we start in a disconnected state for this test
 	if database.Connected() {
-		database.Disconnect()
+		err := database.Disconnect()
+		if err != nil {
+			t.Errorf("Disconnect should not return an error: %v", err)
+		}
 		time.Sleep(200 * time.Millisecond) // Wait for disconnection
 	}
 
@@ -230,7 +236,10 @@ func TestConnectWithInvalidConfig(t *testing.T) {
 	}
 
 	// Clean up
-	database.Disconnect()
+	err := database.Disconnect()
+	if err != nil {
+		t.Errorf("Disconnect should not return an error: %v", err)
+	}
 }
 
 func TestConnectWithSQLiteConfig(t *testing.T) {

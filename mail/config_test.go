@@ -555,16 +555,13 @@ func validateSecurityConfig(config mail.SecurityConfig) bool {
 	return true
 }
 
-func validateQueueConfig(config mail.QueueConfig) bool {
+func validateQueueConfig(_ mail.QueueConfig) bool {
 	// Basic queue config is always valid
 	return true
 }
 
 func validateTemplateConfig(config mail.TemplateConfig) bool {
-	if config.DefaultTemplate == "" {
-		return false
-	}
-	return true
+	return config.DefaultTemplate != ""
 }
 
 func isValidIPOrCIDR(s string) bool {

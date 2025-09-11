@@ -58,7 +58,7 @@ func TestSMTPServer_AddHandler(t *testing.T) {
 
 	// Create a test notification handler
 	var handlerCalled bool
-	handler := func(ctx context.Context, from string, to []string, data io.Reader) error {
+	handler := func(_ context.Context, _ string, to []string, _ io.Reader) error {
 		handlerCalled = true
 		return nil
 	}
@@ -227,7 +227,7 @@ func TestSMTPServer_MultipleHandlers(t *testing.T) {
 	handlerCount := 0
 
 	for i := 0; i < 5; i++ {
-		handler := func(ctx context.Context, from string, to []string, data io.Reader) error {
+		handler := func(_ context.Context, _ string, _ []string, _ io.Reader) error {
 			handlerCount++
 			return nil
 		}
