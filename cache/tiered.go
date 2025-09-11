@@ -184,7 +184,8 @@ func (tc *TieredCache) GetMulti(ctx context.Context, keys []string) (map[string]
 	if err != nil {
 		tc.recordError(err)
 		// Continue to L2 even if L1 fails
-	} else {
+	}
+	if err == nil {
 		for key, value := range l1Results {
 			result[key] = value
 		}

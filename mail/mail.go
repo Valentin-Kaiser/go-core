@@ -10,6 +10,7 @@
 //   - Attachment support
 //   - Statistics tracking
 //   - Retry mechanisms with exponential backoff
+//   - Configurable security features for both client and server (HELO validation, IP filtering, rate limiting)
 //
 // Example Usage:
 //
@@ -26,13 +27,13 @@
 //	func main() {
 //		// Create mail configuration
 //		config := mail.DefaultConfig()
-//		config.SMTP.Host = "smtp.gmail.com"
-//		config.SMTP.Port = 587
-//		config.SMTP.Username = "your-email@gmail.com"
-//		config.SMTP.Password = "your-password"
-//		config.SMTP.From = "noreply@example.com"
-//		config.SMTP.Auth = true
-//		config.SMTP.Encryption = "STARTTLS"
+//		config.Client.Host = "smtp.gmail.com"
+//		config.Client.Port = 587
+//		config.Client.Username = "your-email@gmail.com"
+//		config.Client.Password = "your-password"
+//		config.Client.From = "noreply@example.com"
+//		config.Client.Auth = true
+//		config.Client.Encryption = "STARTTLS"
 //
 //		// Create queue manager
 //		queueManager := queue.NewManager()

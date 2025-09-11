@@ -206,7 +206,7 @@ func TestServerHandlers(t *testing.T) {
 	server := web.New()
 
 	// Test handler registration
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, "test response")
 	})
 
@@ -289,7 +289,7 @@ func TestServerTLS(t *testing.T) {
 func TestServerWebsocket(t *testing.T) {
 	server := web.New()
 
-	wsHandler := func(w http.ResponseWriter, r *http.Request, conn *websocket.Conn) {
+	wsHandler := func(_ http.ResponseWriter, _ *http.Request, conn *websocket.Conn) {
 		// Simple echo websocket handler
 		for {
 			_, message, err := conn.ReadMessage()
@@ -350,7 +350,7 @@ func TestResponseWriter(t *testing.T) {
 	server := web.New()
 
 	// Create a simple handler to test ResponseWriter
-	handler := func(w http.ResponseWriter, r *http.Request) {
+	handler := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Test", "true")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("test response"))

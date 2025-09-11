@@ -157,7 +157,7 @@ func (router *Router) UnregisterHandler(patterns []string) {
 	router.rebuildMux()
 }
 
-// UnregisterAll removes all routes from the router
+// UnregisterAllHandler removes all routes from the router
 // It clears all route-related maps and creates a new empty ServeMux
 func (router *Router) UnregisterAllHandler() {
 	router.mutex.Lock()
@@ -424,7 +424,8 @@ func (router *Router) parseIPList(entries []string) ([]*net.IPNet, error) {
 			if ip := net.ParseIP(entry); ip != nil {
 				if ip.To4() != nil {
 					entry += "/32" // Use /32 for IPv4 addresses
-				} else {
+				}
+				if ip.To4() == nil {
 					entry += "/128" // Use /128 for IPv6 addresses
 				}
 			}

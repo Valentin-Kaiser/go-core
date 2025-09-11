@@ -351,7 +351,7 @@ func TestCatchFunction(t *testing.T) {
 	}, "operation failed")
 }
 
-func TestCatchFunctionSuccess(t *testing.T) {
+func TestCatchFunctionSuccess(_ *testing.T) {
 	// Test successful operation (should not panic)
 	apperror.Catch(func() error {
 		return nil

@@ -84,6 +84,7 @@ func (tm *TemplateManager) WithFileServer(templatesPath string) *TemplateManager
 	return tm
 }
 
+// WithTemplateFunc adds a template function to the manager
 func (tm *TemplateManager) WithTemplateFunc(key string, fn interface{}) *TemplateManager {
 	if tm.Error != nil {
 		return tm
@@ -266,13 +267,13 @@ func (tm *TemplateManager) loadTemplateFromDisk(name string) (*template.Template
 	case tm.config.TemplatesPath != "":
 		// Try to load from custom path
 		customPath := filepath.Clean(filepath.Join(tm.config.TemplatesPath, name))
-		if _, err := os.Stat(customPath); err == nil {
-			content, err = os.ReadFile(customPath)
-			if err != nil {
-				return nil, apperror.NewError("failed to read template file").AddError(err)
-			}
-		} else {
+		if _, err := os.Stat(customPath); err != nil {
 			return nil, apperror.NewError("template not found in templates path").AddError(err)
+		}
+
+		content, err = os.ReadFile(customPath)
+		if err != nil {
+			return nil, apperror.NewError("failed to read template file").AddError(err)
 		}
 	default:
 		return nil, apperror.NewError("no template source configured - use WithFS or WithFileServer")
@@ -307,6 +308,7 @@ func (tm *TemplateManager) parseTemplate(name, content string) (*template.Templa
 	return tmpl, nil
 }
 
+// WithDefaultFuncs adds default template functions to the manager
 func (tm *TemplateManager) WithDefaultFuncs() *TemplateManager {
 	if tm.Error != nil {
 		return tm

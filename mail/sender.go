@@ -10,17 +10,17 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/jordan-wright/email"
+	"github.com/Valentin-Kaiser/go-core/mail/internal/email"
 	"github.com/rs/zerolog/log"
 )
 
-// smtpSender implements the Sender interface using jordan-wright/email
+// smtpSender implements the Sender interface using internal email package
 type smtpSender struct {
 	config          ClientConfig
 	templateManager *TemplateManager
 }
 
-// NewSMTPSender creates a new SMTP sender
+// NewSMTPSender creates a new SMTP sender with configurable security
 func NewSMTPSender(config ClientConfig, templateManager *TemplateManager) Sender {
 	return &smtpSender{
 		config:          config,
@@ -40,7 +40,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 		return apperror.Wrap(err)
 	}
 
-	// Create email using jordan-wright/email
+	// Create email using internal email package
 	emailMsg, err := s.createEmail(message)
 	if err != nil {
 		return apperror.Wrap(err)
@@ -124,7 +124,7 @@ func (s *smtpSender) processTemplate(message *Message) error {
 
 // createEmail creates an email.Email from our Message
 func (s *smtpSender) createEmail(message *Message) (*email.Email, error) {
-	emailMsg := email.NewEmail()
+	emailMsg := email.New()
 
 	// Set From address
 	from := message.From
@@ -252,18 +252,18 @@ func (s *smtpSender) createAuth() smtp.Auth {
 // sendWithTLS sends email with TLS encryption
 func (s *smtpSender) sendWithTLS(emailMsg *email.Email, addr string, auth smtp.Auth) error {
 	tlsConfig := s.config.TLSConfig()
-	return emailMsg.SendWithTLS(addr, auth, tlsConfig)
+	return emailMsg.SendWithTLS(addr, auth, tlsConfig, s.config.FQDN)
 }
 
 // sendWithStartTLS sends email with STARTTLS encryption
 func (s *smtpSender) sendWithStartTLS(emailMsg *email.Email, addr string, auth smtp.Auth) error {
 	tlsConfig := s.config.TLSConfig()
-	return emailMsg.SendWithStartTLS(addr, auth, tlsConfig)
+	return emailMsg.SendWithStartTLS(addr, auth, tlsConfig, s.config.FQDN)
 }
 
 // sendPlain sends email without encryption
 func (s *smtpSender) sendPlain(emailMsg *email.Email, addr string, auth smtp.Auth) error {
-	return emailMsg.Send(addr, auth)
+	return emailMsg.Send(addr, auth, s.config.FQDN)
 }
 
 // getPriorityHeader converts priority to email header value

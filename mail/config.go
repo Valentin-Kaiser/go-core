@@ -84,6 +84,34 @@ type ServerConfig struct {
 	AllowInsecureAuth bool `yaml:"allow_insecure_auth" json:"allow_insecure_auth"`
 	// MaxConcurrentHandlers limits the number of concurrent notification handlers
 	MaxConcurrentHandlers int `yaml:"max_concurrent_handlers" json:"max_concurrent_handlers"`
+	// Security holds the security configuration for the SMTP server
+	Security SecurityConfig `yaml:"security" json:"security"`
+}
+
+// SecurityConfig holds security-related configuration for the smtp server
+type SecurityConfig struct {
+	// HeloValidation enables HELO/EHLO hostname validation
+	HeloValidation bool `yaml:"helo_validation" json:"helo_validation"`
+	// HeloRequireFQDN requires HELO hostname to be a fully qualified domain name
+	HeloRequireFQDN bool `yaml:"helo_require_fqdn" json:"helo_require_fqdn"`
+	// HeloDNSCheck enables DNS resolution check for HELO hostname
+	HeloDNSCheck bool `yaml:"helo_dns_check" json:"helo_dns_check"`
+	// IPAllowlist contains allowed IP addresses/CIDR blocks
+	IPAllowlist []string `yaml:"ip_allowlist" json:"ip_allowlist"`
+	// IPBlocklist contains blocked IP addresses/CIDR blocks
+	IPBlocklist []string `yaml:"ip_blocklist" json:"ip_blocklist"`
+	// MaxConnectionsPerIP limits connections per IP address
+	MaxConnectionsPerIP int `yaml:"max_connections_per_ip" json:"max_connections_per_ip"`
+	// RateLimitPerIP limits commands per IP per minute
+	RateLimitPerIP int `yaml:"rate_limit_per_ip" json:"rate_limit_per_ip"`
+	// AuthFailureDelay adds delay after authentication failures
+	AuthFailureDelay time.Duration `yaml:"auth_failure_delay" json:"auth_failure_delay"`
+	// MaxAuthFailures limits auth attempts before blocking IP
+	MaxAuthFailures int `yaml:"max_auth_failures" json:"max_auth_failures"`
+	// AuthFailureWindow is the time window to track auth failures
+	AuthFailureWindow time.Duration `yaml:"auth_failure_window" json:"auth_failure_window"`
+	// LogSecurityEvents enables detailed security logging
+	LogSecurityEvents bool `yaml:"log_security_events" json:"log_security_events"`
 }
 
 // QueueConfig holds the queue configuration for mail processing
@@ -143,6 +171,19 @@ func DefaultConfig() *Config {
 			MaxRecipients:         100,
 			AllowInsecureAuth:     false,
 			MaxConcurrentHandlers: 50, // Limit concurrent notification handlers
+			Security: SecurityConfig{
+				HeloValidation:      false,
+				HeloRequireFQDN:     false,
+				HeloDNSCheck:        false,
+				IPAllowlist:         []string{},
+				IPBlocklist:         []string{},
+				MaxConnectionsPerIP: 10,
+				RateLimitPerIP:      60, // 60 commands per minute
+				AuthFailureDelay:    time.Second,
+				MaxAuthFailures:     5,
+				AuthFailureWindow:   15 * time.Minute,
+				LogSecurityEvents:   true,
+			},
 		},
 		Queue: QueueConfig{
 			Enabled:     true,
@@ -168,6 +209,7 @@ func (c *ClientConfig) TLSConfig() *tls.Config {
 	}
 }
 
+// Validate checks the client configuration for errors
 func (c *ClientConfig) Validate() error {
 	if c.Host == "" {
 		return apperror.NewError("SMTP host is required")
@@ -199,6 +241,7 @@ func (c *ServerConfig) TLSConfig() *tls.Config {
 	}
 }
 
+// Validate checks the server configuration for errors
 func (c *ServerConfig) Validate() error {
 	if c.Host == "" {
 		return apperror.NewError("SMTP server host is required")
@@ -215,6 +258,7 @@ func (c *ServerConfig) Validate() error {
 	return nil
 }
 
+// Validate checks the queue configuration for errors
 func (c *QueueConfig) Validate() error {
 	if c.QueueName == "" {
 		return apperror.NewError("Queue name is required")
@@ -228,6 +272,7 @@ func (c *QueueConfig) Validate() error {
 	return nil
 }
 
+// Validate checks the template configuration for errors
 func (c *TemplateConfig) Validate() error {
 	if c.DefaultTemplate == "" {
 		return apperror.NewError("Default template is required")
@@ -235,6 +280,7 @@ func (c *TemplateConfig) Validate() error {
 	return nil
 }
 
+// Validate checks the configuration for errors
 func (c *Config) Validate() error {
 	if err := c.Client.Validate(); err != nil {
 		return apperror.Wrap(err)
