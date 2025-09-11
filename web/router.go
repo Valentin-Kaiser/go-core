@@ -424,7 +424,8 @@ func (router *Router) parseIPList(entries []string) ([]*net.IPNet, error) {
 			if ip := net.ParseIP(entry); ip != nil {
 				if ip.To4() != nil {
 					entry += "/32" // Use /32 for IPv4 addresses
-				} else {
+				}
+				if ip.To4() == nil {
 					entry += "/128" // Use /128 for IPv6 addresses
 				}
 			}

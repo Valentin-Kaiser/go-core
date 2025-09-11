@@ -95,6 +95,7 @@ func (mc *MemoryCache) Get(_ context.Context, key string, dest interface{}) (boo
 
 	memItem, ok := element.Value.(*memoryItem)
 	if !ok {
+		mc.mutex.Unlock()
 		mc.updateStats(func(s *Stats) { s.Misses++ })
 		mc.emitEvent(EventGet, key, nil, nil)
 		return false, NewCacheError("get", key, errors.New("invalid cache item type"))
@@ -162,6 +163,7 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value interface{}, ttl
 		TTL:       effectiveTTL,
 		Size:      dataSize,
 		Namespace: mc.config.Namespace,
+		ExpiresAt: time.Time{}, // Default to no expiration
 	}
 
 	if effectiveTTL > 0 {
@@ -177,7 +179,8 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value interface{}, ttl
 	defer mc.mutex.Unlock()
 
 	// Check if key already exists
-	if element, exists := mc.items[formattedKey]; exists {
+	element, exists := mc.items[formattedKey]
+	if exists {
 		// Update existing item
 		oldMemItem, ok := element.Value.(*memoryItem)
 		if !ok {
@@ -192,20 +195,24 @@ func (mc *MemoryCache) Set(_ context.Context, key string, value interface{}, ttl
 		mc.updateStats(func(s *Stats) {
 			s.Memory = s.Memory - oldMemItem.dataSize + dataSize
 		})
-	} else {
-		// Add new item
-		element := mc.lruList.PushFront(memItem)
-		mc.items[formattedKey] = element
 
-		mc.updateStats(func(s *Stats) {
-			s.Size++
-			s.Memory += dataSize
-		})
+		mc.updateStats(func(s *Stats) { s.Sets++ })
+		mc.emitEvent(EventSet, key, value, nil)
+		return nil
+	}
 
-		// Check if we need to evict items
-		if mc.config.MaxSize > 0 && mc.stats.Size > mc.config.MaxSize {
-			mc.evictLRU()
-		}
+	// Add new item
+	element = mc.lruList.PushFront(memItem)
+	mc.items[formattedKey] = element
+
+	mc.updateStats(func(s *Stats) {
+		s.Size++
+		s.Memory += dataSize
+	})
+
+	// Check if we need to evict items
+	if mc.config.MaxSize > 0 && mc.stats.Size > mc.config.MaxSize {
+		mc.evictLRU()
 	}
 
 	mc.updateStats(func(s *Stats) { s.Sets++ })
@@ -250,17 +257,17 @@ func (mc *MemoryCache) Exists(_ context.Context, key string) (bool, error) {
 	item := memItem.item
 
 	// Check if item has expired
-	if item.IsExpired() {
+	if !item.IsExpired() {
 		mc.mutex.RUnlock()
-		// Remove expired item
-		mc.mutex.Lock()
-		mc.removeElement(element, formattedKey)
-		mc.mutex.Unlock()
-		return false, nil
+		return true, nil
 	}
 
 	mc.mutex.RUnlock()
-	return true, nil
+	// Remove expired item
+	mc.mutex.Lock()
+	mc.removeElement(element, formattedKey)
+	mc.mutex.Unlock()
+	return false, nil
 }
 
 // Clear removes all entries from the cache
@@ -364,13 +371,11 @@ func (mc *MemoryCache) SetTTL(_ context.Context, key string, ttl time.Duration) 
 		return NewCacheError("setttl", key, errors.New("invalid item type"))
 	}
 	item := memItem.item
-
+	item.ExpiresAt = time.Time{}
+	item.TTL = 0
 	if ttl > 0 {
 		item.ExpiresAt = time.Now().Add(ttl)
 		item.TTL = ttl
-	} else {
-		item.ExpiresAt = time.Time{}
-		item.TTL = 0
 	}
 
 	item.UpdatedAt = time.Now()
@@ -430,17 +435,20 @@ func (mc *MemoryCache) evictLRU() {
 	}
 
 	element := mc.lruList.Back()
-	if element != nil {
-		memItem, ok := element.Value.(*memoryItem)
-		if !ok {
-			return // Skip if invalid type
-		}
-		key := memItem.item.Key
-		mc.removeElement(element, key)
-
-		mc.updateStats(func(s *Stats) { s.Evictions++ })
-		mc.emitEvent(EventEvict, key, nil, nil)
+	if element == nil {
+		return
 	}
+
+	memItem, ok := element.Value.(*memoryItem)
+	if !ok {
+		return // Skip if invalid type
+	}
+
+	key := memItem.item.Key
+	mc.removeElement(element, key)
+
+	mc.updateStats(func(s *Stats) { s.Evictions++ })
+	mc.emitEvent(EventEvict, key, nil, nil)
 }
 
 // startCleanup starts the background cleanup goroutine
@@ -478,16 +486,21 @@ func (mc *MemoryCache) cleanupExpired() {
 		}
 		item := memItem.item
 
-		if !item.ExpiresAt.IsZero() && now.After(item.ExpiresAt) {
-			expiredKeys = append(expiredKeys, key)
+		if item.ExpiresAt.IsZero() || !now.After(item.ExpiresAt) {
+			continue
 		}
+
+		expiredKeys = append(expiredKeys, key)
 	}
 
 	// Remove expired items
 	for _, key := range expiredKeys {
-		if element, exists := mc.items[key]; exists {
-			mc.removeElement(element, key)
-			mc.emitEvent(EventExpire, key, nil, nil)
+		element, exists := mc.items[key]
+		if !exists {
+			continue
 		}
+
+		mc.removeElement(element, key)
+		mc.emitEvent(EventExpire, key, nil, nil)
 	}
 }

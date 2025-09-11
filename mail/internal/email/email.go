@@ -276,7 +276,8 @@ func (e *Email) Bytes() ([]byte, error) {
 				}
 
 				messageWriter = relatedWriter
-			} else if isRelated && len(htmlAttachments) > 0 {
+			}
+			if isRelated && len(htmlAttachments) > 0 {
 				relatedWriter = w
 				messageWriter = w
 			}

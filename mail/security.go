@@ -57,32 +57,42 @@ func NewSecurityManager(config SecurityConfig) *SecurityManager {
 	for _, ipStr := range config.IPAllowlist {
 		if _, network, err := net.ParseCIDR(ipStr); err == nil {
 			sm.allowedNetworks = append(sm.allowedNetworks, network)
-		} else if ip := net.ParseIP(ipStr); ip != nil {
-			// Single IP address - convert to /32 or /128 network
-			var network *net.IPNet
-			if ip.To4() != nil {
-				_, network, _ = net.ParseCIDR(ipStr + "/32")
-			} else {
-				_, network, _ = net.ParseCIDR(ipStr + "/128")
-			}
-			sm.allowedNetworks = append(sm.allowedNetworks, network)
+			continue
 		}
+		
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		
+		// Single IP address - convert to /32 or /128 network
+		var network *net.IPNet
+		_, network, _ = net.ParseCIDR(ipStr + "/128")  // Default to IPv6
+		if ip.To4() != nil {
+			_, network, _ = net.ParseCIDR(ipStr + "/32")  // Override for IPv4
+		}
+		sm.allowedNetworks = append(sm.allowedNetworks, network)
 	}
 
 	// Parse IP blocklist
 	for _, ipStr := range config.IPBlocklist {
 		if _, network, err := net.ParseCIDR(ipStr); err == nil {
 			sm.blockedNetworks = append(sm.blockedNetworks, network)
-		} else if ip := net.ParseIP(ipStr); ip != nil {
-			// Single IP address - convert to /32 or /128 network
-			var network *net.IPNet
-			if ip.To4() != nil {
-				_, network, _ = net.ParseCIDR(ipStr + "/32")
-			} else {
-				_, network, _ = net.ParseCIDR(ipStr + "/128")
-			}
-			sm.blockedNetworks = append(sm.blockedNetworks, network)
+			continue
 		}
+		
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		
+		// Single IP address - convert to /32 or /128 network
+		var network *net.IPNet
+		_, network, _ = net.ParseCIDR(ipStr + "/128")  // Default to IPv6
+		if ip.To4() != nil {
+			_, network, _ = net.ParseCIDR(ipStr + "/32")  // Override for IPv4
+		}
+		sm.blockedNetworks = append(sm.blockedNetworks, network)
 	}
 
 	// Start cleanup goroutine
@@ -143,11 +153,11 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 				log.Warn().Str("ip", ip.String()).Msg("[Mail] Connection blocked due to authentication failures")
 			}
 			return &SecurityError{Type: "auth_blocked", Message: "IP temporarily blocked due to authentication failures"}
-		} else {
-			// Reset auth failure tracking after window expires
-			tracker.blocked = false
-			tracker.failures = 0
 		}
+		
+		// Reset auth failure tracking after window expires
+		tracker.blocked = false
+		tracker.failures = 0
 	}
 
 	// Increment connection count

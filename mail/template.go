@@ -266,13 +266,13 @@ func (tm *TemplateManager) loadTemplateFromDisk(name string) (*template.Template
 	case tm.config.TemplatesPath != "":
 		// Try to load from custom path
 		customPath := filepath.Clean(filepath.Join(tm.config.TemplatesPath, name))
-		if _, err := os.Stat(customPath); err == nil {
-			content, err = os.ReadFile(customPath)
-			if err != nil {
-				return nil, apperror.NewError("failed to read template file").AddError(err)
-			}
-		} else {
+		if _, err := os.Stat(customPath); err != nil {
 			return nil, apperror.NewError("template not found in templates path").AddError(err)
+		}
+		
+		content, err = os.ReadFile(customPath)
+		if err != nil {
+			return nil, apperror.NewError("failed to read template file").AddError(err)
 		}
 	default:
 		return nil, apperror.NewError("no template source configured - use WithFS or WithFileServer")

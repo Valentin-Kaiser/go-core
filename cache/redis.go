@@ -249,8 +249,9 @@ func (rc *RedisCache) GetMulti(ctx context.Context, keys []string) (map[string]i
 				}
 				result[keys[i]] = dest
 				rc.updateStats(func(s *Stats) { s.Hits++ })
+				continue
 			}
-		} else {
+			
 			rc.updateStats(func(s *Stats) { s.Misses++ })
 		}
 	}
@@ -334,7 +335,8 @@ func (rc *RedisCache) SetTTL(ctx context.Context, key string, ttl time.Duration)
 	var err error
 	if ttl > 0 {
 		err = rc.client.Expire(ctx, formattedKey, ttl).Err()
-	} else {
+	}
+	if ttl <= 0 {
 		err = rc.client.Persist(ctx, formattedKey).Err()
 	}
 

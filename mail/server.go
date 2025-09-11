@@ -106,7 +106,8 @@ func (s *smtpServer) Start(_ context.Context) error {
 		var err error
 		if s.config.TLS {
 			err = s.server.ListenAndServeTLS()
-		} else {
+		}
+		if !s.config.TLS {
 			err = s.server.ListenAndServe()
 		}
 
@@ -276,17 +277,19 @@ func (s *smtpServer) generateSelfSignedCert() (tls.Certificate, error) {
 	if s.config.CertFile != "" && s.config.KeyFile != "" {
 		if err := os.MkdirAll(filepath.Dir(s.config.CertFile), 0750); err != nil {
 			log.Warn().Err(err).Msg("[Mail] Failed to create certificate directory")
-		} else {
-			if err := os.WriteFile(s.config.CertFile, certPEM.Bytes(), 0600); err != nil {
-				log.Warn().Err(err).Msg("[Mail] Failed to save certificate file")
-			}
+			goto createTLS
+		}
+		
+		if err := os.WriteFile(s.config.CertFile, certPEM.Bytes(), 0600); err != nil {
+			log.Warn().Err(err).Msg("[Mail] Failed to save certificate file")
+		}
 
-			if err := os.WriteFile(s.config.KeyFile, keyPEM.Bytes(), 0600); err != nil {
-				log.Warn().Err(err).Msg("[Mail] Failed to save key file")
-			}
+		if err := os.WriteFile(s.config.KeyFile, keyPEM.Bytes(), 0600); err != nil {
+			log.Warn().Err(err).Msg("[Mail] Failed to save key file")
 		}
 	}
 
+	createTLS:
 	// Create TLS certificate
 	cert, err := tls.X509KeyPair(certPEM.Bytes(), keyPEM.Bytes())
 	if err != nil {

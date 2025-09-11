@@ -429,11 +429,9 @@ func (s *TaskScheduler) calculateNextCronRun(cronSpec string, after time.Time) (
 						continue
 					}
 
-					startMinute := 0
+					startMinute := s.findFirstValidValue(expr.Minute)
 					if year == t.Year() && month == int(t.Month()) && day == t.Day() && hour == t.Hour() {
 						startMinute = t.Minute()
-					} else {
-						startMinute = s.findFirstValidValue(expr.Minute)
 					}
 
 					nextMinute, foundMinute := s.findNextValidValue(expr.Minute, startMinute)
@@ -457,12 +455,10 @@ func (s *TaskScheduler) calculateNextCronRun(cronSpec string, after time.Time) (
 						}
 
 						if expr.Second != nil {
-							startSecond := 0
+							startSecond := s.findFirstValidValue(*expr.Second)
 							if year == t.Year() && month == int(t.Month()) && day == t.Day() &&
 								hour == t.Hour() && minute == t.Minute() {
 								startSecond = t.Second()
-							} else {
-								startSecond = s.findFirstValidValue(*expr.Second)
 							}
 
 							nextSecond, foundSecond := s.findNextValidValue(*expr.Second, startSecond)
