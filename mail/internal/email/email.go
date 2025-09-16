@@ -377,7 +377,6 @@ func (e *Email) Send(address string, auth smtp.Auth, helo string) error {
 	if err != nil {
 		return apperror.NewError("could not dial SMTP connection").AddError(err)
 	}
-	defer apperror.Catch(conn.Close, "could not close SMTP connection")
 
 	// Send custom HELO
 	err = conn.Hello(helo)
@@ -531,7 +530,6 @@ func (e *Email) SendWithStartTLS(address string, auth smtp.Auth, config *tls.Con
 	if err != nil {
 		return apperror.NewError("could not dial SMTP connection").AddError(err)
 	}
-	defer apperror.Catch(conn.Close, "could not close SMTP connection")
 
 	// Send custom HELO if provided (before STARTTLS)
 	if helo != "" {
