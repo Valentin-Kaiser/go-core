@@ -132,6 +132,8 @@ type QueueConfig struct {
 
 // TemplateConfig holds the template configuration
 type TemplateConfig struct {
+	// Enabled indicates if template processing is enabled
+	Enabled bool `yaml:"enabled" json:"enabled"`
 	// DefaultTemplate is the name of the default template
 	DefaultTemplate string `yaml:"default_template" json:"default_template"`
 	// AutoReload indicates if templates should be reloaded on change
@@ -260,22 +262,26 @@ func (c *ServerConfig) Validate() error {
 
 // Validate checks the queue configuration for errors
 func (c *QueueConfig) Validate() error {
-	if c.QueueName == "" {
-		return apperror.NewError("Queue name is required")
-	}
-	if c.MaxAttempts <= 0 {
-		return apperror.NewError("Max attempts must be greater than 0")
-	}
-	if c.JobTimeout <= 0 {
-		return apperror.NewError("Job timeout must be greater than 0")
+	if c.Enabled {
+		if c.QueueName == "" {
+			return apperror.NewError("Queue name is required")
+		}
+		if c.MaxAttempts <= 0 {
+			return apperror.NewError("Max attempts must be greater than 0")
+		}
+		if c.JobTimeout <= 0 {
+			return apperror.NewError("Job timeout must be greater than 0")
+		}
 	}
 	return nil
 }
 
 // Validate checks the template configuration for errors
 func (c *TemplateConfig) Validate() error {
-	if c.DefaultTemplate == "" {
-		return apperror.NewError("Default template is required")
+	if c.Enabled {
+		if c.DefaultTemplate == "" {
+			return apperror.NewError("Default template is required")
+		}
 	}
 	return nil
 }

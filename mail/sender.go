@@ -36,8 +36,10 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 	}
 
 	// Process template if specified
-	if err := s.processTemplate(message); err != nil {
-		return apperror.Wrap(err)
+	if s.templateManager != nil && s.templateManager.config.Enabled {
+		if err := s.processTemplate(message); err != nil {
+			return apperror.Wrap(err)
+		}
 	}
 
 	// Create email using internal email package
