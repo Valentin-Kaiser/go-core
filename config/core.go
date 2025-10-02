@@ -93,6 +93,7 @@ import (
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/Valentin-Kaiser/go-core/flag"
+	"github.com/Valentin-Kaiser/go-core/logging"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/pflag"
 
@@ -107,6 +108,7 @@ var (
 	configname string
 	onChange   []func(o Config, n Config) error
 	lastChange atomic.Int64
+	logger     = logging.GetPackageLogger("config")
 )
 
 // Config is the interface that all configuration structs must implement
@@ -229,14 +231,19 @@ func Write(change Config) error {
 // Watch watches the configuration file for changes and calls the provided function when it changes
 // It ignores changes that happen within 1 second of each other
 // This is to prevent multiple calls when the file is saved
-func Watch(onChange func(fsnotify.Event)) {
+func Watch() {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		if time.Now().UnixMilli()-lastChange.Load() < 1000 {
+			logger.Trace().Msg("ignoring config change event due to rate limiting")
 			return
 		}
 		lastChange.Store(time.Now().UnixMilli())
-		onChange(e)
+		err := Read()
+		if err != nil {
+			logger.Error().Err(err).Msg("failed to read configuration")
+			return
+		}
 	})
 }
 

@@ -12,7 +12,6 @@ import (
 
 	"github.com/Valentin-Kaiser/go-core/config"
 	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/fsnotify/fsnotify"
 )
 
 // TestConfig implements the Config interface for testing
@@ -696,13 +695,7 @@ func TestWatchConfigFile(t *testing.T) {
 		t.Fatalf("Read() failed: %v", err)
 	}
 
-	watchCalled := make(chan bool, 1)
-	config.Watch(func(_ fsnotify.Event) {
-		select {
-		case watchCalled <- true:
-		default:
-		}
-	})
+	config.Watch()
 
 	// Give the watcher time to start
 	time.Sleep(100 * time.Millisecond)
