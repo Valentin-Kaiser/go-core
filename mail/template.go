@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -199,7 +198,7 @@ func (tm *TemplateManager) loadTemplatesFromFS(filesystem fs.FS) error {
 			return apperror.Wrap(err)
 		}
 
-		log.Trace().Str("template", path).Msg("loaded template from filesystem")
+		logger.Trace().Field("template", path).Msg("loaded template from filesystem")
 		tm.templates[path] = tmpl
 		return nil
 	})
@@ -242,7 +241,7 @@ func (tm *TemplateManager) loadTemplatesFromPath(templatesPath string) error {
 			return apperror.Wrap(err)
 		}
 
-		log.Trace().Str("template", relPath).Msg("loaded template from path")
+		logger.Trace().Field("template", relPath).Msg("loaded template from path")
 		tm.templates[relPath] = tmpl
 		return nil
 	})
