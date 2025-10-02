@@ -339,7 +339,7 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 			Field("task_name", name).
 			Field("cron_spec", cronSpec).
 			Field("next_run", nextRun).
-			Msg("Existing cron task rescheduled")
+			Msg("existing cron task rescheduled")
 
 		return nil
 	}
@@ -390,7 +390,7 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 		Field("task_name", name).
 		Field("cron_spec", cronSpec).
 		Field("next_run", nextRun).
-		Msg("New cron task registered")
+		Msg("new cron task registered")
 
 	return nil
 }
@@ -443,7 +443,7 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 			Field("task_name", name).
 			Field("interval", interval).
 			Field("next_run", existingTask.NextRun).
-			Msg("Existing interval task rescheduled")
+			Msg("existing interval task rescheduled")
 
 		return nil
 	}
@@ -489,7 +489,7 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 		Field("task_name", name).
 		Field("interval", interval).
 		Field("next_run", task.NextRun).
-		Msg("New interval task registered")
+		Msg("new interval task registered")
 
 	return nil
 }
@@ -588,7 +588,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 			Field("task_name", task.Name).
 			Field("attempt", attempt+1).
 			Field("max_retries", task.MaxRetries+1).
-			Msg("Executing task")
+			Msg("executing task")
 
 		err := task.Function(taskCtx)
 
@@ -605,7 +605,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 				logger.Error().
 					Err(err).
 					Field("task_name", task.Name).
-					Msg("Failed to update next run time")
+					Msg("failed to update next run time")
 			}
 			s.tasksMutex.Unlock()
 
@@ -613,7 +613,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 				Field("task_name", task.Name).
 				Field("run_count", task.RunCount).
 				Field("next_run", task.NextRun).
-				Msg("Task executed successfully")
+				Msg("task executed successfully")
 			return
 		}
 
@@ -622,7 +622,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 			Err(err).
 			Field("task_name", task.Name).
 			Field("attempt", attempt+1).
-			Msg("Task execution failed")
+			Msg("task execution failed")
 
 		if attempt < task.MaxRetries {
 			select {
@@ -645,7 +645,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		logger.Error().
 			Err(err).
 			Field("task_name", task.Name).
-			Msg("Failed to update next run time after retries")
+			Msg("failed to update next run time after retries")
 	}
 	s.tasksMutex.Unlock()
 
@@ -654,7 +654,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		Field("task_name", task.Name).
 		Field("error_count", task.ErrorCount).
 		Field("next_run", task.NextRun).
-		Msg("Task execution failed after all retries")
+		Msg("task execution failed after all retries")
 }
 
 func (s *TaskScheduler) updateNextRun(task *Task) error {
@@ -714,7 +714,7 @@ func (s *TaskScheduler) EnableTask(name string) error {
 
 	logger.Info().
 		Field("task_name", name).
-		Msg("Task enabled")
+		Msg("task enabled")
 
 	return nil
 }
@@ -734,7 +734,7 @@ func (s *TaskScheduler) DisableTask(name string) error {
 
 	logger.Info().
 		Field("task_name", name).
-		Msg("Task disabled")
+		Msg("task disabled")
 
 	return nil
 }
@@ -757,7 +757,7 @@ func (s *TaskScheduler) RemoveTask(name string) error {
 
 	logger.Info().
 		Field("task_name", name).
-		Msg("Task removed")
+		Msg("task removed")
 
 	return nil
 }
@@ -802,7 +802,7 @@ func (s *TaskScheduler) RescheduleTaskWithCron(name, cronSpec string) error {
 		Field("task_name", name).
 		Field("cron_spec", cronSpec).
 		Field("next_run", nextRun).
-		Msg("Task rescheduled with cron specification")
+		Msg("task rescheduled with cron specification")
 
 	return nil
 }
@@ -838,7 +838,7 @@ func (s *TaskScheduler) RescheduleTaskWithInterval(name string, interval time.Du
 		Field("task_name", name).
 		Field("interval", interval).
 		Field("next_run", task.NextRun).
-		Msg("Task rescheduled with interval")
+		Msg("task rescheduled with interval")
 
 	return nil
 }
