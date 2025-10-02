@@ -68,7 +68,6 @@
 package version
 
 import (
-	"fmt"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -321,7 +320,6 @@ func ParseSemver(tag string, n int) int {
 	version := strings.TrimPrefix(strings.SplitN(tag, "-", 2)[0], "v")
 	segments := strings.Split(version, ".")
 	if n >= len(segments) {
-		fmt.Println("error parsing version segment")
 		logger.Error().Fields(
 			logging.F("index", n),
 			logging.F("error", "index out of range"),
