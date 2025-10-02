@@ -2,6 +2,30 @@ package logging
 
 import "context"
 
+// NoOpEvent implements Event interface but does nothing
+type NoOpEvent struct{}
+
+// Fields does nothing and returns itself for chaining
+func (e *NoOpEvent) Fields(fields ...Field) Event {
+	return e
+}
+
+// Field does nothing and returns itself for chaining
+func (e *NoOpEvent) Field(key string, value interface{}) Event {
+	return e
+}
+
+// Err does nothing and returns itself for chaining
+func (e *NoOpEvent) Err(err error) Event {
+	return e
+}
+
+// Msg does nothing
+func (e *NoOpEvent) Msg(msg string) {}
+
+// Msgf does nothing
+func (e *NoOpEvent) Msgf(format string, v ...interface{}) {}
+
 // NoOpAdapter implements LogAdapter but does nothing
 // This is the default implementation for minimal overhead when logging is disabled
 type NoOpAdapter struct {
@@ -14,8 +38,9 @@ func NewNoOpAdapter() Adapter {
 }
 
 // SetLevel sets the log level (no-op)
-func (n *NoOpAdapter) SetLevel(level Level) {
+func (n *NoOpAdapter) SetLevel(level Level) Adapter {
 	n.level = level
+	return n
 }
 
 // GetLevel returns the current log level
@@ -23,26 +48,40 @@ func (n *NoOpAdapter) GetLevel() Level {
 	return n.level
 }
 
-// Trace does nothing
-func (n *NoOpAdapter) Trace(msg string, fields ...Field) {}
+// Trace returns a no-op event
+func (n *NoOpAdapter) Trace() Event {
+	return &NoOpEvent{}
+}
 
-// Debug does nothing
-func (n *NoOpAdapter) Debug(msg string, fields ...Field) {}
+// Debug returns a no-op event
+func (n *NoOpAdapter) Debug() Event {
+	return &NoOpEvent{}
+}
 
-// Info does nothing
-func (n *NoOpAdapter) Info(msg string, fields ...Field) {}
+// Info returns a no-op event
+func (n *NoOpAdapter) Info() Event {
+	return &NoOpEvent{}
+}
 
-// Warn does nothing
-func (n *NoOpAdapter) Warn(msg string, fields ...Field) {}
+// Warn returns a no-op event
+func (n *NoOpAdapter) Warn() Event {
+	return &NoOpEvent{}
+}
 
-// Error does nothing
-func (n *NoOpAdapter) Error(msg string, fields ...Field) {}
+// Error returns a no-op event
+func (n *NoOpAdapter) Error() Event {
+	return &NoOpEvent{}
+}
 
-// Fatal does nothing
-func (n *NoOpAdapter) Fatal(msg string, fields ...Field) {}
+// Fatal returns a no-op event
+func (n *NoOpAdapter) Fatal() Event {
+	return &NoOpEvent{}
+}
 
-// Panic does nothing
-func (n *NoOpAdapter) Panic(msg string, fields ...Field) {}
+// Panic returns a no-op event
+func (n *NoOpAdapter) Panic() Event {
+	return &NoOpEvent{}
+}
 
 func (n *NoOpAdapter) Printf(format string, v ...interface{}) {}
 

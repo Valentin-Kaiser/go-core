@@ -45,40 +45,41 @@ func NewDynamicAdapter(pkg string) Adapter {
 	return &DynamicAdapter{pkg: pkg}
 }
 
-func (d *DynamicAdapter) SetLevel(level Level) {
+func (d *DynamicAdapter) SetLevel(level Level) Adapter {
 	d.current().SetLevel(level)
+	return d
 }
 
 func (d *DynamicAdapter) GetLevel() Level {
 	return d.current().GetLevel()
 }
 
-func (d *DynamicAdapter) Trace(msg string, fields ...Field) {
-	d.current().Trace(msg, fields...)
+func (d *DynamicAdapter) Trace() Event {
+	return d.current().Trace()
 }
 
-func (d *DynamicAdapter) Debug(msg string, fields ...Field) {
-	d.current().Debug(msg, fields...)
+func (d *DynamicAdapter) Debug() Event {
+	return d.current().Debug()
 }
 
-func (d *DynamicAdapter) Info(msg string, fields ...Field) {
-	d.current().Info(msg, fields...)
+func (d *DynamicAdapter) Info() Event {
+	return d.current().Info()
 }
 
-func (d *DynamicAdapter) Warn(msg string, fields ...Field) {
-	d.current().Warn(msg, fields...)
+func (d *DynamicAdapter) Warn() Event {
+	return d.current().Warn()
 }
 
-func (d *DynamicAdapter) Error(msg string, fields ...Field) {
-	d.current().Error(msg, fields...)
+func (d *DynamicAdapter) Error() Event {
+	return d.current().Error()
 }
 
-func (d *DynamicAdapter) Fatal(msg string, fields ...Field) {
-	d.current().Fatal(msg, fields...)
+func (d *DynamicAdapter) Fatal() Event {
+	return d.current().Fatal()
 }
 
-func (d *DynamicAdapter) Panic(msg string, fields ...Field) {
-	d.current().Panic(msg, fields...)
+func (d *DynamicAdapter) Panic() Event {
+	return d.current().Panic()
 }
 
 func (d *DynamicAdapter) Printf(format string, v ...interface{}) {

@@ -45,17 +45,16 @@ func (l Level) String() string {
 // Adapter defines the interface for internal logging
 type Adapter interface {
 	// Level control
-	SetLevel(level Level)
+	SetLevel(level Level) Adapter
 	GetLevel() Level
 
-	// Basic logging methods
-	Trace(msg string, fields ...Field)
-	Debug(msg string, fields ...Field)
-	Info(msg string, fields ...Field)
-	Warn(msg string, fields ...Field)
-	Error(msg string, fields ...Field)
-	Fatal(msg string, fields ...Field)
-	Panic(msg string, fields ...Field)
+	Trace() Event
+	Debug() Event
+	Info() Event
+	Warn() Event
+	Error() Event
+	Fatal() Event
+	Panic() Event
 
 	Printf(format string, v ...interface{})
 
@@ -76,4 +75,21 @@ type Field struct {
 // F is a helper function to create fields
 func F(key string, value interface{}) Field {
 	return Field{Key: key, Value: value}
+}
+
+// Event represents a log event with a fluent interface
+type Event interface {
+	// Add fields to the event
+	Fields(fields ...Field) Event
+
+	Field(key string, value interface{}) Event
+
+	// Add an error to the event
+	Err(err error) Event
+
+	// Log the message
+	Msg(msg string)
+
+	// Log the formatted message
+	Msgf(format string, v ...interface{})
 }
