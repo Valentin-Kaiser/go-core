@@ -10,7 +10,7 @@ type NoOpAdapter struct {
 
 // NewNoOpAdapter creates a new no-op adapter
 func NewNoOpAdapter() Adapter {
-	return &NoOpAdapter{level: LevelDisabled}
+	return &NoOpAdapter{level: DisabledLevel}
 }
 
 // SetLevel sets the log level (no-op)
@@ -43,6 +43,8 @@ func (n *NoOpAdapter) Fatal(msg string, fields ...Field) {}
 
 // Panic does nothing
 func (n *NoOpAdapter) Panic(msg string, fields ...Field) {}
+
+func (n *NoOpAdapter) Printf(format string, v ...interface{}) {}
 
 // WithContext returns the same no-op adapter
 func (n *NoOpAdapter) WithContext(ctx context.Context) Adapter {

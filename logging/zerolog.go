@@ -17,7 +17,7 @@ type ZerologAdapter struct {
 func NewZerologAdapter() Adapter {
 	return &ZerologAdapter{
 		logger: log.Logger,
-		level:  LevelInfo,
+		level:  InfoLevel,
 	}
 }
 
@@ -25,7 +25,7 @@ func NewZerologAdapter() Adapter {
 func NewZerologAdapterWithLogger(logger zerolog.Logger) Adapter {
 	return &ZerologAdapter{
 		logger: logger,
-		level:  LevelInfo,
+		level:  InfoLevel,
 	}
 }
 
@@ -43,21 +43,21 @@ func (z *ZerologAdapter) GetLevel() Level {
 // convertLevel converts our Level to zerolog.Level
 func (z *ZerologAdapter) convertLevel(level Level) zerolog.Level {
 	switch level {
-	case LevelTrace:
+	case TraceLevel:
 		return zerolog.TraceLevel
-	case LevelDebug:
+	case DebugLevel:
 		return zerolog.DebugLevel
-	case LevelInfo:
+	case InfoLevel:
 		return zerolog.InfoLevel
-	case LevelWarn:
+	case WarnLevel:
 		return zerolog.WarnLevel
-	case LevelError:
+	case ErrorLevel:
 		return zerolog.ErrorLevel
-	case LevelFatal:
+	case FatalLevel:
 		return zerolog.FatalLevel
-	case LevelPanic:
+	case PanicLevel:
 		return zerolog.PanicLevel
-	case LevelDisabled:
+	case DisabledLevel:
 		return zerolog.Disabled
 	default:
 		return zerolog.InfoLevel
@@ -105,6 +105,10 @@ func (z *ZerologAdapter) Fatal(msg string, fields ...Field) {
 // Panic logs a panic message
 func (z *ZerologAdapter) Panic(msg string, fields ...Field) {
 	z.addFields(z.logger.Panic(), fields).Msg(msg)
+}
+
+func (z *ZerologAdapter) Printf(format string, v ...interface{}) {
+	z.logger.Printf(format, v...)
 }
 
 // WithContext returns a new adapter with context

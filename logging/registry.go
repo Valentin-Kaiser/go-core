@@ -81,6 +81,10 @@ func (d *DynamicAdapter) Panic(msg string, fields ...Field) {
 	d.current().Panic(msg, fields...)
 }
 
+func (d *DynamicAdapter) Printf(format string, v ...interface{}) {
+	d.current().Printf(format, v...)
+}
+
 func (d *DynamicAdapter) WithContext(ctx context.Context) Adapter {
 	return d.current().WithContext(ctx)
 }

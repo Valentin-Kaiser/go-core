@@ -8,34 +8,34 @@ import (
 type Level int
 
 const (
-	LevelTrace Level = iota
-	LevelDebug
-	LevelInfo
-	LevelWarn
-	LevelError
-	LevelFatal
-	LevelPanic
-	LevelDisabled
+	TraceLevel Level = iota
+	DebugLevel
+	InfoLevel
+	WarnLevel
+	ErrorLevel
+	FatalLevel
+	PanicLevel
+	DisabledLevel
 )
 
 // String returns the string representation of the log level
 func (l Level) String() string {
 	switch l {
-	case LevelTrace:
+	case TraceLevel:
 		return "trace"
-	case LevelDebug:
+	case DebugLevel:
 		return "debug"
-	case LevelInfo:
+	case InfoLevel:
 		return "info"
-	case LevelWarn:
+	case WarnLevel:
 		return "warn"
-	case LevelError:
+	case ErrorLevel:
 		return "error"
-	case LevelFatal:
+	case FatalLevel:
 		return "fatal"
-	case LevelPanic:
+	case PanicLevel:
 		return "panic"
-	case LevelDisabled:
+	case DisabledLevel:
 		return "disabled"
 	default:
 		return "unknown"
@@ -56,6 +56,8 @@ type Adapter interface {
 	Error(msg string, fields ...Field)
 	Fatal(msg string, fields ...Field)
 	Panic(msg string, fields ...Field)
+
+	Printf(format string, v ...interface{})
 
 	// Context-aware logging
 	WithContext(ctx context.Context) Adapter
