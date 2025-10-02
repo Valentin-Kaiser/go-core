@@ -335,7 +335,7 @@ func onConnect(config Config) {
 	}
 
 	// Check for the current version in the database
-	revision := version.GetVersion()
+	revision := version.Get()
 	err = db.Where("git_tag = ? AND git_commit = ?", revision.GitTag, revision.GitCommit).First(&version.Release{}).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Fatal().Err(err).Msgf("[Database] version check failed")
