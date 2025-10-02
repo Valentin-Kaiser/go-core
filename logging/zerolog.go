@@ -102,37 +102,65 @@ func (z *ZerologAdapter) convertLevel(level Level) zerolog.Level {
 
 // Trace returns a trace level event
 func (z *ZerologAdapter) Trace() Event {
-	return &ZerologEvent{event: z.logger.Trace()}
+	e := &ZerologEvent{event: z.logger.Trace()}
+	if debug {
+		return e.Field("caller", track())
+	}
+	return e
 }
 
 // Debug returns a debug level event
 func (z *ZerologAdapter) Debug() Event {
-	return &ZerologEvent{event: z.logger.Debug()}
+	e := &ZerologEvent{event: z.logger.Debug()}
+	if debug {
+		return e.Field("caller", track())
+	}
+	return e
 }
 
 // Info returns an info level event
 func (z *ZerologAdapter) Info() Event {
-	return &ZerologEvent{event: z.logger.Info()}
+	e := &ZerologEvent{event: z.logger.Info()}
+	if debug {
+		return e.Field("caller", track())
+	}
+	return e
 }
 
 // Warn returns a warning level event
 func (z *ZerologAdapter) Warn() Event {
-	return &ZerologEvent{event: z.logger.Warn()}
+	e := &ZerologEvent{event: z.logger.Warn()}
+	if debug {
+		return e.Field("caller", track())
+	}
+	return e
 }
 
 // Error returns an error level event
 func (z *ZerologAdapter) Error() Event {
-	return &ZerologEvent{event: z.logger.Error()}
+	e := &ZerologEvent{event: z.logger.Error()}
+	if debug {
+		return e.Field("caller", track())
+	}
+	return e
 }
 
 // Fatal returns a fatal level event
 func (z *ZerologAdapter) Fatal() Event {
-	return &ZerologEvent{event: z.logger.Fatal()}
+	e := &ZerologEvent{event: z.logger.Fatal()}
+	if debug {
+		return e.Field("caller", track())
+	}
+	return e
 }
 
 // Panic returns a panic level event
 func (z *ZerologAdapter) Panic() Event {
-	return &ZerologEvent{event: z.logger.Panic()}
+	e := &ZerologEvent{event: z.logger.Panic()}
+	if debug {
+		return e.Field("caller", track())
+	}
+	return e
 }
 
 func (z *ZerologAdapter) Printf(format string, v ...interface{}) {

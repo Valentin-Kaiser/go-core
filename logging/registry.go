@@ -2,6 +2,8 @@ package logging
 
 import (
 	"context"
+	"fmt"
+	"runtime"
 	"sync"
 )
 
@@ -12,6 +14,10 @@ var (
 	packages sync.Map
 	// mu protects the global adapter
 	mu sync.RWMutex
+	// debug enables/disables caller tracking for all adapters
+	debug bool
+	// anonymous enables anonymous caller tracking by using the package name and line instead of file path
+	anonymous bool
 )
 
 // SetGlobalAdapter sets the global logging adapter for all packages
@@ -98,6 +104,16 @@ func (d *DynamicAdapter) WithPackage(pkg string) Adapter {
 	return d.current().WithPackage(pkg)
 }
 
+// WithDebug sets whether to use caller tracking
+func WithDebug(d bool) {
+	debug = d
+}
+
+// WithAnonymous sets whether to use anonymous caller tracking
+func WithAnonymous(a bool) {
+	anonymous = a
+}
+
 // GetPackageLogger returns a logger for a specific package
 // Returns a dynamic adapter that will always use the current global/package-specific adapter
 func GetPackageLogger(pkg string) Adapter {
@@ -165,4 +181,19 @@ func (d *DynamicAdapter) current() Adapter {
 	mu.RLock()
 	defer mu.RUnlock()
 	return global.WithPackage(d.pkg)
+}
+
+func track() string {
+	pc, file, line, ok := runtime.Caller(3)
+	if !ok {
+		return ""
+	}
+
+	if anonymous {
+		if f := runtime.FuncForPC(pc); f != nil {
+			return fmt.Sprintf("%s:%d", f.Name(), line)
+		}
+	}
+
+	return fmt.Sprintf("%s:%d", file, line)
 }

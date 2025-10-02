@@ -35,6 +35,7 @@ type StandardEvent struct {
 	level   Level
 	fields  []Field
 	err     error
+	caller  string
 }
 
 // Fields adds structured fields to the event
@@ -90,6 +91,10 @@ func (e *StandardEvent) formatMessage(msg string) string {
 	// Add level prefix
 	parts = append(parts, fmt.Sprintf("[%s]", strings.ToUpper(e.level.String())))
 
+	if e.caller != "" {
+		parts = append(parts, fmt.Sprintf("%s > ", e.caller))
+	}
+
 	// Add the main message
 	parts = append(parts, msg)
 
@@ -119,37 +124,65 @@ func (s *StandardAdapter) GetLevel() Level {
 
 // Trace returns a trace level event
 func (s *StandardAdapter) Trace() Event {
-	return &StandardEvent{adapter: s, level: TraceLevel}
+	e := &StandardEvent{adapter: s, level: TraceLevel}
+	if debug {
+		e.caller = track()
+	}
+	return e
 }
 
 // Debug returns a debug level event
 func (s *StandardAdapter) Debug() Event {
-	return &StandardEvent{adapter: s, level: DebugLevel}
+	e := &StandardEvent{adapter: s, level: DebugLevel}
+	if debug {
+		e.caller = track()
+	}
+	return e
 }
 
 // Info returns an info level event
 func (s *StandardAdapter) Info() Event {
-	return &StandardEvent{adapter: s, level: InfoLevel}
+	e := &StandardEvent{adapter: s, level: InfoLevel}
+	if debug {
+		e.caller = track()
+	}
+	return e
 }
 
 // Warn returns a warning level event
 func (s *StandardAdapter) Warn() Event {
-	return &StandardEvent{adapter: s, level: WarnLevel}
+	e := &StandardEvent{adapter: s, level: WarnLevel}
+	if debug {
+		e.caller = track()
+	}
+	return e
 }
 
 // Error returns an error level event
 func (s *StandardAdapter) Error() Event {
-	return &StandardEvent{adapter: s, level: ErrorLevel}
+	e := &StandardEvent{adapter: s, level: ErrorLevel}
+	if debug {
+		e.caller = track()
+	}
+	return e
 }
 
 // Fatal returns a fatal level event
 func (s *StandardAdapter) Fatal() Event {
-	return &StandardEvent{adapter: s, level: FatalLevel}
+	e := &StandardEvent{adapter: s, level: FatalLevel}
+	if debug {
+		e.caller = track()
+	}
+	return e
 }
 
 // Panic returns a panic level event
 func (s *StandardAdapter) Panic() Event {
-	return &StandardEvent{adapter: s, level: PanicLevel}
+	e := &StandardEvent{adapter: s, level: PanicLevel}
+	if debug {
+		e.caller = track()
+	}
+	return e
 }
 
 // Printf prints a formatted message
