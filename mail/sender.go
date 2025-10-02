@@ -23,7 +23,7 @@ type smtpSender struct {
 // NewSMTPSender creates a new SMTP sender with configurable security
 func NewSMTPSender(config ClientConfig, templateManager *TemplateManager) Sender {
 	if config.Enabled {
-		logger.Info().Msgf("sender configured to send emails via %s:%d using %s encryption", config.Host, config.Port, config.Encryption)
+		logger.Info().Field("host", config.Host).Field("port", config.Port).Field("encryption", config.Encryption).Msg("SMTP sender enabled")
 	}
 
 	return &smtpSender{

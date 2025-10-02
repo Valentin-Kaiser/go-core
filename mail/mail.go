@@ -170,7 +170,7 @@ func (m *Manager) Start(_ context.Context) error {
 			}
 		}()
 
-		logger.Info().Msgf("server started on %s:%d", m.config.Server.Host, m.config.Server.Port)
+		logger.Info().Msgf("SMTP server started on %s:%d", m.config.Server.Host, m.config.Server.Port)
 	}
 
 	return nil

@@ -12,7 +12,7 @@ import (
 // Config holds the configuration for the mail package
 type Config struct {
 	// SMTP Client Configuration
-	Client ClientConfig `yaml:"smtp" json:"smtp"`
+	Client ClientConfig `yaml:"client" json:"client"`
 	// SMTP Server Configuration
 	Server ServerConfig `yaml:"server" json:"server"`
 	// Queue Configuration
