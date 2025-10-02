@@ -128,6 +128,8 @@ func SetPackageLevel(pkg string, level Level) {
 	switch adapter := global.(type) {
 	case *ZerologAdapter:
 		newAdapter = NewZerologAdapterWithLogger(adapter.logger)
+	case *StandardAdapter:
+		newAdapter = NewStandardAdapterWithLogger(adapter.logger)
 	default:
 		newAdapter = NewNoOpAdapter() // Fallback to NoOpAdapter if unknown type
 	}
