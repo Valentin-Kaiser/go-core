@@ -314,7 +314,7 @@ func IsSemver(tag string) bool {
 // ParseSemver parses the specified segment (major, minor, or patch) from the Git tag.
 func ParseSemver(tag string, n int) int {
 	if !IsSemver(tag) {
-		logger.Error("invalid git tag format", logging.F("tag", tag))
+		logger.Error().Fields(logging.F("tag", tag)).Msg("invalid git tag format")
 		return 0
 	}
 
@@ -322,17 +322,19 @@ func ParseSemver(tag string, n int) int {
 	segments := strings.Split(version, ".")
 	if n >= len(segments) {
 		fmt.Println("error parsing version segment")
-		logger.Error("error parsing version segment",
+		logger.Error().Fields(
 			logging.F("index", n),
-			logging.F("error", "index out of range"))
+			logging.F("error", "index out of range"),
+		).Msg("error parsing version segment")
 		return 0
 	}
 
 	v, err := strconv.Atoi(segments[n])
 	if err != nil {
-		logger.Error("error parsing version segment",
+		logger.Error().Fields(
 			logging.F("index", n),
-			logging.F("error", err))
+			logging.F("error", err),
+		).Msg("error parsing version segment")
 		return 0
 	}
 
@@ -344,7 +346,7 @@ func ParseSemver(tag string, n int) int {
 // If the tag is not a valid Git tag, it returns an empty string.
 func ExtractSemanticVersion(tag string) string {
 	if !IsSemver(tag) {
-		logger.Error("invalid git tag format", logging.F("tag", tag))
+		logger.Error().Fields(logging.F("tag", tag)).Msg("invalid git tag format")
 		return ""
 	}
 

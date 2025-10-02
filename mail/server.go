@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/rs/zerolog/log"
 )
 
 // SMTP errors
@@ -191,7 +190,7 @@ func (s *smtpServer) Start(_ context.Context) error {
 		}
 
 		if err != nil && err != ErrServerClosed {
-			log.Error().Err(err).Msg("[Mail] SMTP server error")
+			logger.Error().Err(err).Msg("[Mail] SMTP server error")
 			select {
 			case serverReady <- err:
 			default:
@@ -253,7 +252,7 @@ func (s *smtpServer) Stop(ctx context.Context) error {
 	s.mutex.Lock()
 	if s.listener != nil {
 		if err := s.listener.Close(); err != nil {
-			log.Error().Err(err).Msg("[Mail] Failed to close SMTP server")
+			logger.Error().Err(err).Msg("[Mail] Failed to close SMTP server")
 			s.mutex.Unlock()
 			return apperror.Wrap(err)
 		}
@@ -276,7 +275,7 @@ func (s *smtpServer) Stop(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		log.Warn().Msg("[Mail] SMTP server stop timed out waiting for worker pool")
+		logger.Warn().Msg("[Mail] SMTP server stop timed out waiting for worker pool")
 		return ctx.Err()
 	}
 }
@@ -366,16 +365,16 @@ func (s *smtpServer) generateSelfSignedCert() (tls.Certificate, error) {
 	// Save certificates if paths are specified
 	if s.config.CertFile != "" && s.config.KeyFile != "" {
 		if err := os.MkdirAll(filepath.Dir(s.config.CertFile), 0750); err != nil {
-			log.Warn().Err(err).Msg("[Mail] Failed to create certificate directory")
+			logger.Warn().Err(err).Msg("[Mail] Failed to create certificate directory")
 			goto createTLS
 		}
 
 		if err := os.WriteFile(s.config.CertFile, certPEM.Bytes(), 0600); err != nil {
-			log.Warn().Err(err).Msg("[Mail] Failed to save certificate file")
+			logger.Warn().Err(err).Msg("[Mail] Failed to save certificate file")
 		}
 
 		if err := os.WriteFile(s.config.KeyFile, keyPEM.Bytes(), 0600); err != nil {
-			log.Warn().Err(err).Msg("[Mail] Failed to save key file")
+			logger.Warn().Err(err).Msg("[Mail] Failed to save key file")
 		}
 	}
 
@@ -411,25 +410,25 @@ func (s *smtpServer) notifyHandlers(ctx context.Context, from string, to []strin
 			// Successfully queued
 		case <-time.After(100 * time.Millisecond):
 			// Queue is full and timed out - log warning but continue
-			log.Warn().
-				Str("from", from).
-				Strs("to", to).
-				Int("queue_size", len(s.handlerQueue)).
-				Int("queue_capacity", cap(s.handlerQueue)).
+			logger.Warn().
+				Field("from", from).
+				Field("to", to).
+				Field("queue_size", len(s.handlerQueue)).
+				Field("queue_capacity", cap(s.handlerQueue)).
 				Msg("[Mail] Notification handler queue is full, dropping task")
 		case <-ctx.Done():
 			// Context cancelled
-			log.Warn().
+			logger.Warn().
 				Err(ctx.Err()).
-				Str("from", from).
-				Strs("to", to).
+				Field("from", from).
+				Field("to", to).
 				Msg("[Mail] Notification handler cancelled due to context")
 			return
 		case <-s.ctx.Done():
 			// Server context cancelled
-			log.Warn().
-				Str("from", from).
-				Strs("to", to).
+			logger.Warn().
+				Field("from", from).
+				Field("to", to).
 				Msg("[Mail] Notification handler cancelled due to server shutdown")
 			return
 		}
@@ -449,16 +448,16 @@ func (s *smtpServer) startWorkerPool() {
 				case task := <-s.handlerQueue:
 					// Process the handler task
 					if err := task.handler(task.ctx, task.from, task.to, task.data); err != nil {
-						log.Error().
+						logger.Error().
 							Err(err).
-							Str("from", task.from).
-							Strs("to", task.to).
-							Int("worker_id", workerID).
+							Field("from", task.from).
+							Field("to", task.to).
+							Field("worker_id", workerID).
 							Msg("[Mail] Notification handler failed")
 					}
 				case <-s.ctx.Done():
-					log.Trace().
-						Int("worker_id", workerID).
+					logger.Trace().
+						Field("worker_id", workerID).
 						Msg("[Mail] Notification handler worker stopping")
 					return
 				}
@@ -476,14 +475,14 @@ type backend struct {
 func (b *backend) NewSession(conn *Conn) (Session, error) {
 	remoteAddr := conn.Conn().RemoteAddr().String()
 
-	log.Trace().
-		Str("remote_addr", remoteAddr).
+	logger.Trace().
+		Field("remote_addr", remoteAddr).
 		Msg("[Mail] New SMTP session")
 
 	// Validate connection using security manager
 	if err := b.server.security.ValidateConnection(remoteAddr); err != nil {
-		log.Warn().
-			Str("remote_addr", remoteAddr).
+		logger.Warn().
+			Field("remote_addr", remoteAddr).
 			Err(err).
 			Msg("[Mail] Connection rejected by security manager")
 		return nil, err
@@ -518,9 +517,9 @@ func (s *session) validateHeloIfNeeded() error {
 	hostname := s.conn.Hostname()
 
 	if err := s.server.security.ValidateHelo(hostname, s.remoteAddr); err != nil {
-		log.Warn().
-			Str("remote_addr", s.remoteAddr).
-			Str("hostname", hostname).
+		logger.Warn().
+			Field("remote_addr", s.remoteAddr).
+			Field("hostname", hostname).
 			Err(err).
 			Msg("[Mail] HELO validation failed")
 		return err
@@ -539,9 +538,9 @@ func (s *session) AuthPlain(username, password string) error {
 
 	// Check rate limiting first
 	if err := s.server.security.CheckRateLimit(s.remoteAddr); err != nil {
-		log.Warn().
-			Str("remote_addr", s.remoteAddr).
-			Str("username", username).
+		logger.Warn().
+			Field("remote_addr", s.remoteAddr).
+			Field("username", username).
 			Msg("[Mail] Authentication rate limit exceeded")
 		return ErrAuthFailed
 	}
@@ -550,14 +549,14 @@ func (s *session) AuthPlain(username, password string) error {
 		return ErrAuthUnsupported
 	}
 
-	log.Trace().
-		Str("username", username).
+	logger.Trace().
+		Field("username", username).
 		Msg("[Mail] SMTP PLAIN authentication attempt")
 
 	if username == s.server.config.Username && password == s.server.config.Password {
 		s.authenticated = true
 		s.server.security.RecordAuthSuccess(s.remoteAddr)
-		log.Trace().Str("username", username).Msg("[Mail] SMTP authentication successful")
+		logger.Trace().Field("username", username).Msg("[Mail] SMTP authentication successful")
 		return nil
 	}
 
@@ -567,7 +566,7 @@ func (s *session) AuthPlain(username, password string) error {
 		time.Sleep(delay)
 	}
 
-	log.Warn().Str("username", username).Msg("[Mail] SMTP authentication failed")
+	logger.Warn().Field("username", username).Msg("[Mail] SMTP authentication failed")
 	return ErrAuthFailed
 }
 
@@ -580,19 +579,19 @@ func (s *session) Mail(from string, _ *MailOptions) error {
 
 	// Check rate limiting
 	if err := s.server.security.CheckRateLimit(s.remoteAddr); err != nil {
-		log.Warn().
-			Str("remote_addr", s.remoteAddr).
-			Str("from", from).
+		logger.Warn().
+			Field("remote_addr", s.remoteAddr).
+			Field("from", from).
 			Msg("[Mail] MAIL command rate limit exceeded")
 		return err
 	}
 
 	if s.server.config.Auth && !s.authenticated {
-		log.Warn().Str("from", from).Msg("[Mail] Unauthenticated MAIL command rejected")
+		logger.Warn().Field("from", from).Msg("[Mail] Unauthenticated MAIL command rejected")
 		return ErrAuthRequired
 	}
 
-	log.Trace().Str("from", from).Msg("[Mail] MAIL FROM")
+	logger.Trace().Field("from", from).Msg("[Mail] MAIL FROM")
 	s.from = from
 	return nil
 }
@@ -606,15 +605,15 @@ func (s *session) Rcpt(to string, _ *RcptOptions) error {
 
 	// Check rate limiting
 	if err := s.server.security.CheckRateLimit(s.remoteAddr); err != nil {
-		log.Warn().
-			Str("remote_addr", s.remoteAddr).
-			Str("to", to).
+		logger.Warn().
+			Field("remote_addr", s.remoteAddr).
+			Field("to", to).
 			Msg("[Mail] RCPT command rate limit exceeded")
 		return err
 	}
 
 	if s.server.config.Auth && !s.authenticated {
-		log.Warn().Str("to", to).Msg("[Mail] Unauthenticated RCPT command rejected")
+		logger.Warn().Field("to", to).Msg("[Mail] Unauthenticated RCPT command rejected")
 		return ErrAuthRequired
 	}
 
@@ -630,7 +629,7 @@ func (s *session) Data(r io.Reader) error {
 	}
 
 	if s.server.config.Auth && !s.authenticated {
-		log.Warn().Msg("[Mail] Unauthenticated DATA command rejected")
+		logger.Warn().Msg("[Mail] Unauthenticated DATA command rejected")
 		return ErrAuthRequired
 	}
 
@@ -654,7 +653,7 @@ func (s *session) Data(r io.Reader) error {
 
 // Reset resets the session
 func (s *session) Reset() {
-	log.Debug().Msg("[Mail] SMTP session reset")
+	logger.Debug().Msg("[Mail] SMTP session reset")
 	s.from = ""
 	s.to = nil
 }
@@ -663,7 +662,7 @@ func (s *session) Reset() {
 func (s *session) Logout() error {
 	// Clean up connection tracking in security manager
 	s.server.security.CloseConnection(s.remoteAddr)
-	log.Debug().Msg("[Mail] SMTP session logout")
+	logger.Debug().Msg("[Mail] SMTP session logout")
 	return nil
 }
 
@@ -728,10 +727,10 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 		if err := netConn.Close(); err != nil {
 			// Check if this is a normal connection close/reset
 			if isConnectionClosed(err) {
-				log.Debug().Err(err).Msg("[Mail] Connection closed")
+				logger.Debug().Err(err).Msg("[Mail] Connection closed")
 				return
 			}
-			log.Error().Err(err).Msg("[Mail] Failed to close connection")
+			logger.Error().Err(err).Msg("[Mail] Failed to close connection")
 		}
 	}()
 
@@ -739,20 +738,20 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 	if s.config.ReadTimeout > 0 {
 		if err := netConn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
 			if isConnectionClosed(err) {
-				log.Debug().Err(err).Msg("[Mail] Connection closed while setting read deadline")
+				logger.Debug().Err(err).Msg("[Mail] Connection closed while setting read deadline")
 				return
 			}
-			log.Error().Err(err).Msg("[Mail] Failed to set read deadline")
+			logger.Error().Err(err).Msg("[Mail] Failed to set read deadline")
 			return
 		}
 	}
 	if s.config.WriteTimeout > 0 {
 		if err := netConn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
 			if isConnectionClosed(err) {
-				log.Debug().Err(err).Msg("[Mail] Connection closed while setting write deadline")
+				logger.Debug().Err(err).Msg("[Mail] Connection closed while setting write deadline")
 				return
 			}
-			log.Error().Err(err).Msg("[Mail] Failed to set write deadline")
+			logger.Error().Err(err).Msg("[Mail] Failed to set write deadline")
 			return
 		}
 	}
@@ -780,14 +779,14 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 func (s *smtpServer) NewSession(conn *Conn) (Session, error) {
 	remoteAddr := conn.Conn().RemoteAddr().String()
 
-	log.Trace().
-		Str("remote_addr", remoteAddr).
+	logger.Trace().
+		Field("remote_addr", remoteAddr).
 		Msg("[Mail] New SMTP session")
 
 	// Validate connection using security manager
 	if err := s.security.ValidateConnection(remoteAddr); err != nil {
-		log.Warn().
-			Str("remote_addr", remoteAddr).
+		logger.Warn().
+			Field("remote_addr", remoteAddr).
 			Err(err).
 			Msg("[Mail] Connection rejected by security manager")
 		return nil, err
@@ -807,10 +806,10 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 		if s.config.ReadTimeout > 0 {
 			if err := conn.conn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
 				if isConnectionClosed(err) {
-					log.Debug().Err(err).Msg("[Mail] Connection closed while updating read deadline")
+					logger.Debug().Err(err).Msg("[Mail] Connection closed while updating read deadline")
 					return
 				}
-				log.Error().Err(err).Msg("[Mail] Failed to update read deadline")
+				logger.Error().Err(err).Msg("[Mail] Failed to update read deadline")
 				return
 			}
 		}
@@ -819,10 +818,10 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 			if err := conn.scanner.Err(); err != nil {
 				// Check if this is a normal connection close/reset
 				if isConnectionClosed(err) {
-					log.Debug().Err(err).Msg("[Mail] Client disconnected")
+					logger.Debug().Err(err).Msg("[Mail] Client disconnected")
 					return
 				}
-				log.Error().Err(err).Msg("[Mail] Connection read error")
+				logger.Error().Err(err).Msg("[Mail] Connection read error")
 			}
 			return
 		}
@@ -832,7 +831,7 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 			continue
 		}
 
-		log.Trace().Str("command", line).Msg("[Mail] Received SMTP command")
+		logger.Trace().Field("command", line).Msg("[Mail] Received SMTP command")
 
 		parts := strings.SplitN(line, " ", 2)
 		command := strings.ToUpper(parts[0])
@@ -896,17 +895,17 @@ func (s *smtpServer) writeRaw(conn *Conn, data string) {
 	if s.config.WriteTimeout > 0 {
 		if err := conn.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
 			if isConnectionClosed(err) {
-				log.Debug().Err(err).Msg("[Mail] Connection closed while setting write deadline")
+				logger.Debug().Err(err).Msg("[Mail] Connection closed while setting write deadline")
 				return
 			}
-			log.Warn().Err(err).Msg("[Mail] Failed to set write deadline, continuing anyway")
+			logger.Warn().Err(err).Msg("[Mail] Failed to set write deadline, continuing anyway")
 		}
 	}
 
 	conn.writer.WriteString(data)
 	conn.writer.Flush()
 
-	log.Trace().Str("response", strings.TrimSpace(data)).Msg("[Mail] Sent SMTP response")
+	logger.Trace().Field("response", strings.TrimSpace(data)).Msg("[Mail] Sent SMTP response")
 }
 
 // isConnectionClosed checks if an error indicates a normal connection close/reset
@@ -994,7 +993,7 @@ func (s *smtpServer) handleStartTLS(conn *Conn) bool {
 	// Upgrade connection to TLS
 	tlsConn := tls.Server(conn.conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
-		log.Error().Err(err).Msg("[Mail] TLS handshake failed")
+		logger.Error().Err(err).Msg("[Mail] TLS handshake failed")
 		return false
 	}
 

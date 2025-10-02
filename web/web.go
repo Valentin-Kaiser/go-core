@@ -70,11 +70,11 @@ import (
 	"github.com/NYTimes/gziphandler"
 	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/Valentin-Kaiser/go-core/interruption"
+	"github.com/Valentin-Kaiser/go-core/logging"
 	"github.com/Valentin-Kaiser/go-core/security"
 	"github.com/Valentin-Kaiser/go-core/zlog"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )
@@ -82,6 +82,7 @@ import (
 var (
 	mutex    sync.Mutex
 	instance *Server
+	logger   = logging.GetPackageLogger("web")
 )
 
 // Server represents a web server with a set of middlewares and handlers
@@ -168,7 +169,7 @@ func (s *Server) Start() *Server {
 		g, _ := errgroup.WithContext(context.Background())
 		if s.redirect != nil {
 			g.Go(func() error {
-				log.Info().Msgf("[Web] redirecting HTTP to HTTPS at %s", s.redirect.Addr)
+				logger.Info().Fields(logging.F("addr", s.redirect.Addr)).Msg("redirecting HTTP to HTTPS")
 				err := s.redirect.ListenAndServe()
 				if err != nil && err != http.ErrServerClosed {
 					return apperror.NewError("failed to start redirect server").AddError(err)
@@ -184,7 +185,7 @@ func (s *Server) Start() *Server {
 			server := s.server
 			s.mutex.Unlock()
 
-			log.Info().Msgf("[Web] listening on https at %s", server.Addr)
+			logger.Info().Fields(logging.F("addr", server.Addr)).Msg("listening on https")
 
 			err := server.ListenAndServeTLS("", "")
 			if err != nil && err != http.ErrServerClosed {
@@ -199,7 +200,7 @@ func (s *Server) Start() *Server {
 		return s
 	}
 
-	log.Info().Msgf("[Web] listening on http at %s:%d", s.host, s.port)
+	logger.Info().Fields(logging.F("host", s.host), logging.F("port", s.port)).Msg("listening on http")
 
 	s.mutex.Lock()
 	s.server.Addr = net.JoinHostPort(s.host, fmt.Sprintf("%d", s.port))
@@ -255,7 +256,7 @@ func (s *Server) Stop() error {
 			return apperror.NewError("failed to stop webserver").AddError(err)
 		}
 
-		log.Trace().Msgf("[Web] server stopped")
+		logger.Trace().Msg("server stopped")
 	}
 	return nil
 }
@@ -271,7 +272,7 @@ func (s *Server) Shutdown() error {
 	s.mutex.RUnlock()
 
 	if server != nil {
-		log.Trace().Msgf("[Web] shutting down webserver...")
+		logger.Trace().Msg("shutting down webserver...")
 		shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownRelease()
 
@@ -280,7 +281,7 @@ func (s *Server) Shutdown() error {
 			return apperror.NewError("failed to shutdown webserver").AddError(err)
 		}
 
-		log.Trace().Msgf("[Web] server stopped")
+		logger.Trace().Msg("server stopped")
 	}
 	return nil
 }
@@ -295,7 +296,7 @@ func (s *Server) Restart() error {
 	s.mutex.RUnlock()
 
 	if server != nil {
-		log.Trace().Msgf("[Web] restarting webserver...")
+		logger.Trace().Msg("restarting webserver...")
 		shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownRelease()
 
@@ -323,7 +324,7 @@ func (s *Server) RestartAsync(done chan error) {
 	s.mutex.RUnlock()
 
 	if server != nil {
-		log.Trace().Msgf("[Web] restarting webserver...")
+		logger.Trace().Msg("restarting webserver...")
 		shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownRelease()
 
@@ -445,7 +446,7 @@ func (s *Server) WithWebsocket(path string, handler func(http.ResponseWriter, *h
 	s.router.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 		conn, err := s.upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Error().Err(apperror.Wrap(err)).Msg("could not upgrade websocket connection")
+			logger.Error().Fields(logging.F("error", err)).Msg("could not upgrade websocket connection")
 			return
 		}
 
@@ -580,7 +581,7 @@ func (s *Server) WithRedirectToHTTPS(port uint16) *Server {
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h, _, err := net.SplitHostPort(r.Host)
 			if err != nil {
-				log.Error().Err(apperror.Wrap(err)).Msg("failed to split host and port from request")
+				logger.Error().Fields(logging.F("error", err)).Msg("failed to split host and port from request")
 				http.Error(w, "Bad Request", http.StatusBadRequest)
 				return
 			}
@@ -588,7 +589,7 @@ func (s *Server) WithRedirectToHTTPS(port uint16) *Server {
 			if ip != nil && ip.To16() != nil && ip.To4() == nil {
 				h = "[" + ip.String() + "]"
 			}
-			log.Trace().Msgf("[Web] redirecting HTTP request from %s to HTTPS", r.URL.Path)
+			logger.Trace().Fields(logging.F("path", r.URL.Path)).Msg("redirecting HTTP request to HTTPS")
 			http.Redirect(w, r, fmt.Sprintf("https://%s:%d%s", h, s.port, r.URL.Path), http.StatusMovedPermanently)
 		}),
 		ErrorLog:          s.errorLog,

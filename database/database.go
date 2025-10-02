@@ -80,15 +80,15 @@ import (
 	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/Valentin-Kaiser/go-core/flag"
 	"github.com/Valentin-Kaiser/go-core/interruption"
+	"github.com/Valentin-Kaiser/go-core/logging"
 	"github.com/Valentin-Kaiser/go-core/version"
-	"github.com/Valentin-Kaiser/go-core/zlog"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gl "gorm.io/gorm/logger"
 )
+
+var logger = logging.GetPackageLogger("database")
 
 var (
 	db               *gorm.DB
@@ -128,14 +128,14 @@ func Connected() bool {
 
 // Reconnect will set the connected state to false and trigger a reconnect
 func Reconnect() {
-	log.Trace().Msg("[Database] reconnecting...")
+	logger.Trace().Msg("[Database] reconnecting...")
 	connected.Store(false)
 	failed.Store(false)
 }
 
 // Disconnect will stop the database connection and wait for the connection to be closed
 func Disconnect() error {
-	log.Trace().Msg("[Database] closing connection...")
+	logger.Trace().Msg("[Database] closing connection...")
 	cancel.Store(true)
 	if connected.Load() && db != nil {
 		sdb, err := db.DB()
@@ -148,7 +148,7 @@ func Disconnect() error {
 		}
 	}
 	<-done
-	log.Trace().Msg("[Database] connection closed")
+	logger.Trace().Msg("[Database] connection closed")
 	return nil
 }
 
@@ -175,7 +175,7 @@ func Connect(interval time.Duration, config Config) {
 					if err != nil {
 						// Prevent spamming the logs with connection errors
 						if !failed.Load() {
-							log.Error().Err(err).Msg("[Database] connection failed")
+							logger.Error().Err(err).Msg("[Database] connection failed")
 						}
 						failed.Store(true)
 						return
@@ -194,18 +194,18 @@ func Connect(interval time.Duration, config Config) {
 					for _, handler := range handlers {
 						err := handler(dbInstance, config)
 						if err != nil {
-							log.Error().Err(err).Msg("[Database] onConnect handler failed")
+							logger.Error().Err(err).Msg("[Database] onConnect handler failed")
 							failed.Store(true)
 							return
 						}
 					}
 
 					if failed.Load() {
-						log.Info().Msg("[Database] connection restored")
+						logger.Info().Msg("[Database] connection restored")
 					}
 					failed.Store(false)
 					connected.Store(true)
-					log.Debug().Msg("[Database] connection established")
+					logger.Debug().Msg("[Database] connection established")
 					return
 				}
 
@@ -218,7 +218,7 @@ func Connect(interval time.Duration, config Config) {
 				if dbInstance != nil {
 					err := dbInstance.Exec("SELECT 1;").Error
 					if err != nil && connected.Load() {
-						log.Error().Err(err).Msg("[Database] connection lost")
+						logger.Error().Err(err).Msg("[Database] connection lost")
 						connected.Store(false)
 						failed.Store(true)
 					}
@@ -247,20 +247,20 @@ func RegisterOnConnectHandler(handler func(db *gorm.DB, config Config) error) {
 // connect will try to connect to the database and return the connection
 func connect(config Config) (*gorm.DB, error) {
 	// Silence gorm internal logging
-	newLogger := logger.New(
-		&log.Logger,
-		logger.Config{
+	newLogger := gl.New(
+		nil,
+		gl.Config{
 			SlowThreshold: time.Second,
-			LogLevel:      logger.Silent,
+			LogLevel:      gl.Silent,
 		},
 	)
 	// If we are in trace loglevel, enable gorm logging
-	if zlog.Logger().GetLevel() < zerolog.TraceLevel && flag.Debug {
-		newLogger = logger.New(
-			&log.Logger,
-			logger.Config{
+	if logger.GetLevel() < logging.TraceLevel && flag.Debug {
+		newLogger = gl.New(
+			logger,
+			gl.Config{
 				SlowThreshold: time.Second,
-				LogLevel:      logger.Info,
+				LogLevel:      gl.Info,
 			},
 		)
 	}
@@ -331,20 +331,20 @@ func connect(config Config) (*gorm.DB, error) {
 func onConnect(config Config) {
 	err := setup(db)
 	if err != nil {
-		log.Fatal().Err(err).Msgf("[Database] schema setup failed")
+		logger.Fatal().Err(err).Msg("[Database] schema setup failed")
 	}
 
 	// Check for the current version in the database
 	revision := version.Get()
 	err = db.Where("git_tag = ? AND git_commit = ?", revision.GitTag, revision.GitCommit).First(&version.Release{}).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		log.Fatal().Err(err).Msgf("[Database] version check failed")
+		logger.Fatal().Err(err).Msg("[Database] version check failed")
 	}
 
 	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 		err = migrateSchema(db)
 		if err != nil {
-			log.Fatal().Err(err).Msgf("[Database] schema migration failed")
+			logger.Fatal().Err(err).Msg("[Database] schema migration failed")
 		}
 
 		for _, steps := range getMigrationSteps() {
@@ -359,28 +359,28 @@ func onConnect(config Config) {
 					// Execute all migration step actions for this version
 					err = step.Action(db)
 					if err != nil {
-						log.Fatal().Err(err).Msgf("[Database] migration failed")
+						logger.Fatal().Err(err).Msg("[Database] migration failed")
 					}
 				}
 
 				// Create the version record for this migration step
 				err = db.Create(&steps[0].Version).Error
 				if err != nil {
-					log.Fatal().Err(err).Msgf("[Database] version creation failed")
+					logger.Fatal().Err(err).Msg("[Database] version creation failed")
 				}
 			}
 		}
 
 		err = db.Create(&revision).Error
 		if err != nil {
-			log.Fatal().Err(err).Msgf("[Database] version creation failed")
+			logger.Fatal().Err(err).Msg("[Database] version creation failed")
 		}
 	}
 
 	if config.Driver == "sqlite" {
 		err = db.Exec("VACUUM;").Error
 		if err != nil {
-			log.Warn().Err(err).Msgf("[Database] vacuum failed")
+			logger.Warn().Err(err).Msg("[Database] vacuum failed")
 		}
 	}
 }

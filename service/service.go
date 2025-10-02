@@ -6,12 +6,13 @@ import (
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/Valentin-Kaiser/go-core/flag"
+	"github.com/Valentin-Kaiser/go-core/logging"
 	"github.com/kardianos/service"
-	"github.com/rs/zerolog/log"
 )
 
 var (
 	interactive bool = false
+	logger           = logging.GetPackageLogger("service")
 )
 
 type Config = service.Config
@@ -22,7 +23,7 @@ func init() {
 	if !interactive {
 		flag.Path, err = os.Executable()
 		if err != nil {
-			log.Error().Err(err).Msg("[Init] creating service failed")
+			logger.Error().Fields(logging.F("error", err)).Msg("[Init] creating service failed")
 			return
 		}
 		flag.Path = filepath.Join(filepath.Dir(flag.Path), "data")
@@ -30,7 +31,7 @@ func init() {
 
 	flag.Path, err = filepath.Abs(flag.Path)
 	if err != nil {
-		log.Error().Err(err).Msgf("[Init] determining absolute path failed")
+		logger.Error().Fields(logging.F("error", err)).Msg("[Init] determining absolute path failed")
 		return
 	}
 }

@@ -107,10 +107,12 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/Valentin-Kaiser/go-core/logging"
 	"github.com/Valentin-Kaiser/go-core/queue"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
 )
+
+var logger = logging.GetPackageLogger("mail")
 
 // Manager manages email sending and SMTP server functionality
 type Manager struct {
@@ -164,7 +166,7 @@ func (m *Manager) Start(_ context.Context) error {
 		go func() {
 			defer m.wg.Done()
 			if err := m.server.Start(m.ctx); err != nil {
-				log.Error().Err(err).Msg("[Mail] Failed to start SMTP server")
+				logger.Error().Err(err).Msg("[Mail] Failed to start SMTP server")
 			}
 		}()
 	}
@@ -181,7 +183,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.cancel()
 	if m.server != nil && m.server.IsRunning() {
 		if err := m.server.Stop(ctx); err != nil {
-			log.Error().Err(err).Msg("[Mail] Failed to stop SMTP server")
+			logger.Error().Err(err).Msg("[Mail] Failed to stop SMTP server")
 		}
 	}
 
@@ -195,7 +197,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		log.Warn().Msg("[Mail] Mail manager stop timed out")
+		logger.Warn().Msg("[Mail] Mail manager stop timed out")
 		return ctx.Err()
 	}
 }
@@ -211,10 +213,10 @@ func (m *Manager) Send(ctx context.Context, message *Message) error {
 		message.ID = uuid.New().String()
 	}
 
-	log.Debug().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
+	logger.Debug().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
 		Msg("[Mail] Sending email")
 
 	// Send the message
@@ -227,10 +229,10 @@ func (m *Manager) Send(ctx context.Context, message *Message) error {
 	m.incrementSentCount()
 	m.updateLastSent()
 
-	log.Info().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
+	logger.Info().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
 		Msg("[Mail] Email sent successfully")
 
 	return nil
@@ -251,10 +253,10 @@ func (m *Manager) SendAsync(ctx context.Context, message *Message) error {
 		message.ID = uuid.New().String()
 	}
 
-	log.Debug().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
+	logger.Debug().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
 		Msg("[Mail] Queuing email for async sending")
 
 	// Create queue job
@@ -296,10 +298,10 @@ func (m *Manager) SendAsync(ctx context.Context, message *Message) error {
 
 	m.incrementQueuedCount()
 
-	log.Info().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
+	logger.Info().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
 		Msg("[Mail] Email queued for async sending")
 
 	return nil
@@ -361,9 +363,7 @@ func (m *Manager) SendTestEmail(ctx context.Context, to string) error {
 
 // handleMailJob handles queued mail jobs
 func (m *Manager) handleMailJob(ctx context.Context, job *queue.Job) error {
-	log.Debug().
-		Str("job_id", job.ID).
-		Msg("[Mail] Processing mail job")
+	logger.Debug().Field("job_id", job.ID).Msg("[Mail] Processing mail job")
 
 	// Decode the message from job payload
 	var jobData map[string]interface{}
@@ -384,11 +384,11 @@ func (m *Manager) handleMailJob(ctx context.Context, job *queue.Job) error {
 	m.updateLastSent()
 	m.decrementQueuedCount()
 
-	log.Info().
-		Str("job_id", job.ID).
-		Str("message_id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
+	logger.Info().
+		Field("job_id", job.ID).
+		Field("message_id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
 		Msg("[Mail] Queued email sent successfully")
 
 	return nil

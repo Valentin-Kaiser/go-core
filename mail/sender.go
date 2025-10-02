@@ -12,7 +12,6 @@ import (
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/Valentin-Kaiser/go-core/mail/internal/email"
-	"github.com/rs/zerolog/log"
 )
 
 // smtpSender implements the Sender interface using internal email package
@@ -56,10 +55,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 	// Send with retries
 	for attempt := 0; attempt <= s.config.MaxRetries; attempt++ {
 		if attempt > 0 {
-			log.Warn().
-				Int("attempt", attempt).
-				Str("message_id", message.ID).
-				Msg("[Mail] Retrying email send")
+			logger.Warn().Field("attempt", attempt).Field("message_id", message.ID).Msg("[Mail] Retrying email send")
 
 			select {
 			case <-ctx.Done():
@@ -74,11 +70,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 			return nil
 		}
 
-		log.Error().
-			Err(err).
-			Int("attempt", attempt).
-			Str("message_id", message.ID).
-			Msg("[Mail] Failed to send email via SMTP")
+		logger.Error().Err(err).Field("attempt", attempt).Field("message_id", message.ID).Msg("[Mail] Failed to send email via SMTP")
 
 		if attempt == s.config.MaxRetries {
 			break

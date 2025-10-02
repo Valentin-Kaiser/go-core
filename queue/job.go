@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/rs/zerolog/log"
 )
 
 // Priority defines the priority levels for jobs
@@ -269,7 +268,7 @@ func (bm *BatchManager) DeleteBatch(ctx context.Context, id string) error {
 	for _, jobID := range batch.JobIDs {
 		if err := bm.manager.queue.DeleteJob(ctx, jobID); err != nil {
 			// Log the error but continue with other jobs
-			log.Error().Err(err).Str("job_id", jobID).Msg("Failed to delete job from batch")
+			logger.Error().Err(err).Field("job_id", jobID).Msg("Failed to delete job from batch")
 		}
 	}
 

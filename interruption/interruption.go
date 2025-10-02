@@ -14,17 +14,17 @@
 //
 //	import (
 //		"github.com/Valentin-Kaiser/go-core/interruption"
-//		"github.com/rs/zerolog/log"
+//		"fmt"
 //	)
 //
 //	func main() {
 //		defer interruption.Handle()
-//		log.Info().Msg("Application started")
+//		fmt.Println("Application started")
 //		// Your application logic here
 //
 //		ctx := interruption.OnSignal([]func() error{
 //			func() error {
-//				log.Info().Msg("Received interrupt signal, shutting down gracefully")
+//				fmt.Println("Received interrupt signal, shutting down gracefully")
 //				return nil
 //			},
 //		}, os.Interrupt, syscall.SIGTERM)
@@ -48,8 +48,10 @@ import (
 	"strings"
 
 	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/rs/zerolog/log"
+	"github.com/Valentin-Kaiser/go-core/logging"
 )
+
+var logger = logging.GetPackageLogger("interruption")
 
 // Catch is a function that handles panics in the application
 // It recovers from the panic and logs the error message along with the stack trace
@@ -63,10 +65,10 @@ func Catch() {
 		}
 
 		if flag.Debug {
-			log.Error().Msgf("[Interrupt] %v code: %v => %v \n %v", caller, line, err, string(debug.Stack()))
+			logger.Error().Msgf("[Interrupt] %v code: %v => %v \n %v", caller, line, err, string(debug.Stack()))
 			return
 		}
-		log.Error().Msgf("[Interrupt] %v code: %v => %v", caller, line, err)
+		logger.Error().Msgf("[Interrupt] %v code: %v => %v", caller, line, err)
 	}
 }
 
@@ -98,7 +100,7 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 			func() {
 				defer Catch()
 				if err := handler(); err != nil {
-					log.Error().Err(err).Msgf("[Signal] handler failed: %v", err)
+					logger.Error().Err(err).Msgf("[Signal] handler failed")
 				}
 			}()
 		}
