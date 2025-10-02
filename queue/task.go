@@ -270,6 +270,228 @@ func (s *TaskScheduler) RegisterIntervalTaskWithOptions(name string, interval ti
 	return nil
 }
 
+// RegisterOrRescheduleCronTask registers a new cron-based task or reschedules an existing one
+func (s *TaskScheduler) RegisterOrRescheduleCronTask(name, cronSpec string, fn TaskFunc) error {
+	return s.RegisterOrRescheduleCronTaskWithOptions(name, cronSpec, fn, TaskOptions{})
+}
+
+// RegisterOrRescheduleIntervalTask registers a new interval-based task or reschedules an existing one
+func (s *TaskScheduler) RegisterOrRescheduleIntervalTask(name string, interval time.Duration, fn TaskFunc) error {
+	return s.RegisterOrRescheduleIntervalTaskWithOptions(name, interval, fn, TaskOptions{})
+}
+
+// RegisterOrRescheduleCronTaskWithOptions registers a new cron-based task or reschedules an existing one with options
+func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec string, fn TaskFunc, options TaskOptions) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if cronSpec == "" {
+		return apperror.NewError("cron specification cannot be empty")
+	}
+	if fn == nil {
+		return apperror.NewError("task function cannot be nil")
+	}
+
+	if err := s.ValidateCronSpec(cronSpec); err != nil {
+		return apperror.NewError(fmt.Sprintf("invalid cron specification: %v", err))
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	existingTask, exists := s.tasks[name]
+	if exists {
+		// Task exists, reschedule it
+		if existingTask.IsRunning {
+			return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+		}
+
+		nextRun, err := s.calculateNextCronRun(cronSpec, time.Now())
+		if err != nil {
+			return apperror.NewError(fmt.Sprintf("failed to calculate next run time: %v", err))
+		}
+
+		// Update existing task
+		existingTask.Type = TaskTypeCron
+		existingTask.CronSpec = cronSpec
+		existingTask.Interval = 0 // Clear interval for cron tasks
+		existingTask.Function = fn
+		existingTask.NextRun = nextRun
+		existingTask.UpdatedAt = time.Now()
+
+		// Update options if provided
+		if options.MaxRetries > 0 {
+			existingTask.MaxRetries = options.MaxRetries
+		}
+		if options.RetryDelay > 0 {
+			existingTask.RetryDelay = options.RetryDelay
+		}
+		if options.Timeout > 0 {
+			existingTask.Timeout = options.Timeout
+		}
+		if options.Enabled != nil {
+			existingTask.Enabled = *options.Enabled
+		}
+
+		log.Info().
+			Str("task_name", name).
+			Str("cron_spec", cronSpec).
+			Time("next_run", nextRun).
+			Msg("Existing cron task rescheduled")
+
+		return nil
+	}
+
+	// Task doesn't exist, register new one
+	maxRetries := s.defaultRetries
+	if options.MaxRetries > 0 {
+		maxRetries = options.MaxRetries
+	}
+
+	retryDelay := s.retryDelay
+	if options.RetryDelay > 0 {
+		retryDelay = options.RetryDelay
+	}
+
+	timeout := s.defaultTimeout
+	if options.Timeout > 0 {
+		timeout = options.Timeout
+	}
+
+	task := &Task{
+		ID:         generateTaskID(),
+		Name:       name,
+		Type:       TaskTypeCron,
+		CronSpec:   cronSpec,
+		Function:   fn,
+		MaxRetries: maxRetries,
+		RetryDelay: retryDelay,
+		Timeout:    timeout,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		Enabled:    true,
+	}
+
+	if options.Enabled != nil {
+		task.Enabled = *options.Enabled
+	}
+
+	nextRun, err := s.calculateNextCronRun(cronSpec, time.Now())
+	if err != nil {
+		return apperror.NewError(fmt.Sprintf("failed to calculate next run time: %v", err))
+	}
+
+	task.NextRun = nextRun
+	s.tasks[name] = task
+
+	log.Info().
+		Str("task_name", name).
+		Str("cron_spec", cronSpec).
+		Time("next_run", nextRun).
+		Msg("New cron task registered")
+
+	return nil
+}
+
+// RegisterOrRescheduleIntervalTaskWithOptions registers a new interval-based task or reschedules an existing one with options
+func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string, interval time.Duration, fn TaskFunc, options TaskOptions) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if interval <= 0 {
+		return apperror.NewError("interval must be positive")
+	}
+	if fn == nil {
+		return apperror.NewError("task function cannot be nil")
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	existingTask, exists := s.tasks[name]
+	if exists {
+		// Task exists, reschedule it
+		if existingTask.IsRunning {
+			return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+		}
+
+		// Update existing task
+		existingTask.Type = TaskTypeInterval
+		existingTask.CronSpec = "" // Clear cron spec for interval tasks
+		existingTask.Interval = interval
+		existingTask.Function = fn
+		existingTask.NextRun = time.Now().Add(interval)
+		existingTask.UpdatedAt = time.Now()
+
+		// Update options if provided
+		if options.MaxRetries > 0 {
+			existingTask.MaxRetries = options.MaxRetries
+		}
+		if options.RetryDelay > 0 {
+			existingTask.RetryDelay = options.RetryDelay
+		}
+		if options.Timeout > 0 {
+			existingTask.Timeout = options.Timeout
+		}
+		if options.Enabled != nil {
+			existingTask.Enabled = *options.Enabled
+		}
+
+		log.Info().
+			Str("task_name", name).
+			Dur("interval", interval).
+			Time("next_run", existingTask.NextRun).
+			Msg("Existing interval task rescheduled")
+
+		return nil
+	}
+
+	// Task doesn't exist, register new one
+	maxRetries := s.defaultRetries
+	if options.MaxRetries > 0 {
+		maxRetries = options.MaxRetries
+	}
+
+	retryDelay := s.retryDelay
+	if options.RetryDelay > 0 {
+		retryDelay = options.RetryDelay
+	}
+
+	timeout := s.defaultTimeout
+	if options.Timeout > 0 {
+		timeout = options.Timeout
+	}
+
+	task := &Task{
+		ID:         generateTaskID(),
+		Name:       name,
+		Type:       TaskTypeInterval,
+		Interval:   interval,
+		Function:   fn,
+		NextRun:    time.Now(), // Run immediately the first time
+		MaxRetries: maxRetries,
+		RetryDelay: retryDelay,
+		Timeout:    timeout,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+		Enabled:    true,
+	}
+
+	if options.Enabled != nil {
+		task.Enabled = *options.Enabled
+	}
+
+	s.tasks[name] = task
+
+	log.Info().
+		Str("task_name", name).
+		Dur("interval", interval).
+		Time("next_run", task.NextRun).
+		Msg("New interval task registered")
+
+	return nil
+}
+
 // Start starts the task scheduler
 func (s *TaskScheduler) Start(ctx context.Context) error {
 	if !atomic.CompareAndSwapInt32(&s.running, 0, 1) {
@@ -534,6 +756,87 @@ func (s *TaskScheduler) RemoveTask(name string) error {
 	log.Info().
 		Str("task_name", name).
 		Msg("Task removed")
+
+	return nil
+}
+
+// RescheduleTaskWithCron reschedules an existing task with a new cron specification
+func (s *TaskScheduler) RescheduleTaskWithCron(name, cronSpec string) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if cronSpec == "" {
+		return apperror.NewError("cron specification cannot be empty")
+	}
+
+	if err := s.ValidateCronSpec(cronSpec); err != nil {
+		return apperror.NewError(fmt.Sprintf("invalid cron specification: %v", err))
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	task, exists := s.tasks[name]
+	if !exists {
+		return apperror.NewError(fmt.Sprintf("task '%s' not found", name))
+	}
+
+	if task.IsRunning {
+		return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+	}
+
+	nextRun, err := s.calculateNextCronRun(cronSpec, time.Now())
+	if err != nil {
+		return apperror.NewError(fmt.Sprintf("failed to calculate next run time: %v", err))
+	}
+
+	task.Type = TaskTypeCron
+	task.CronSpec = cronSpec
+	task.Interval = 0 // Clear interval for cron tasks
+	task.NextRun = nextRun
+	task.UpdatedAt = time.Now()
+
+	log.Info().
+		Str("task_name", name).
+		Str("cron_spec", cronSpec).
+		Time("next_run", nextRun).
+		Msg("Task rescheduled with cron specification")
+
+	return nil
+}
+
+// RescheduleTaskWithInterval reschedules an existing task with a new interval
+func (s *TaskScheduler) RescheduleTaskWithInterval(name string, interval time.Duration) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if interval <= 0 {
+		return apperror.NewError("interval must be positive")
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	task, exists := s.tasks[name]
+	if !exists {
+		return apperror.NewError(fmt.Sprintf("task '%s' not found", name))
+	}
+
+	if task.IsRunning {
+		return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+	}
+
+	task.Type = TaskTypeInterval
+	task.CronSpec = "" // Clear cron spec for interval tasks
+	task.Interval = interval
+	task.NextRun = time.Now().Add(interval)
+	task.UpdatedAt = time.Now()
+
+	log.Info().
+		Str("task_name", name).
+		Dur("interval", interval).
+		Time("next_run", task.NextRun).
+		Msg("Task rescheduled with interval")
 
 	return nil
 }
