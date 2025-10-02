@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/smtp"
 	"strings"
 	"time"
@@ -30,6 +31,10 @@ func NewSMTPSender(config ClientConfig, templateManager *TemplateManager) Sender
 
 // Send sends an email message via SMTP
 func (s *smtpSender) Send(ctx context.Context, message *Message) error {
+	if !s.config.Enabled {
+		return apperror.NewError("SMTP sender is disabled")
+	}
+
 	// Validate message
 	if err := s.validateMessage(message); err != nil {
 		return apperror.Wrap(err)
@@ -225,7 +230,7 @@ func (s *smtpSender) sendEmail(_ context.Context, emailMsg *email.Email) error {
 	}
 
 	// Get server address
-	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
+	addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
 
 	// Send based on encryption method
 	switch strings.ToUpper(s.config.Encryption) {

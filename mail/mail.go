@@ -139,9 +139,7 @@ func NewManager(config *Config, queueManager *queue.Manager) *Manager {
 		cancel:       cancel,
 	}
 
-	if config.Templates.Enabled {
-		manager.TemplateManager = NewTemplateManager(config.Templates)
-	}
+	manager.TemplateManager = NewTemplateManager(config.Templates)
 	manager.sender = NewSMTPSender(config.Client, manager.TemplateManager)
 
 	if config.Server.Enabled {

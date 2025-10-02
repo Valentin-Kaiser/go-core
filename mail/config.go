@@ -22,6 +22,7 @@ type Config struct {
 
 // ClientConfig holds the SMTP client configuration for sending emails
 type ClientConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
 	// Host is the SMTP server hostname
 	Host string `yaml:"host" json:"host"`
 	// Port is the SMTP server port
@@ -213,6 +214,9 @@ func (c *ClientConfig) TLSConfig() *tls.Config {
 
 // Validate checks the client configuration for errors
 func (c *ClientConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
 	if c.Host == "" {
 		return apperror.NewError("SMTP host is required")
 	}
