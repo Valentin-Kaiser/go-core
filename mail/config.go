@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/Valentin-Kaiser/go-core/config"
 )
 
 // Config holds the configuration for the mail package
@@ -305,4 +306,24 @@ func (c *Config) Validate() error {
 		return apperror.Wrap(err)
 	}
 	return nil
+}
+
+func (c *Config) Changed(n *Config) bool {
+	return config.Changed(c, n)
+}
+
+func (c *ClientConfig) Changed(n *ClientConfig) bool {
+	return config.Changed(c, n)
+}
+
+func (c *ServerConfig) Changed(n *ServerConfig) bool {
+	return config.Changed(c, n)
+}
+
+func (c *QueueConfig) Changed(n *QueueConfig) bool {
+	return config.Changed(c, n)
+}
+
+func (c *TemplateConfig) Changed(n *TemplateConfig) bool {
+	return config.Changed(c, n)
 }

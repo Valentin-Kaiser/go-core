@@ -72,6 +72,7 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/Valentin-Kaiser/go-core/config"
 )
 
 // Cache defines the interface for cache implementations
@@ -209,6 +210,10 @@ type Config struct {
 	Namespace       string        `json:"namespace"`
 	Serializer      Serializer    `json:"-"`
 	EventHandler    EventHandler  `json:"-"`
+}
+
+func (c *Config) Changed(n *Config) bool {
+	return config.Changed(c, n)
 }
 
 // Serializer defines the interface for value serialization

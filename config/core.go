@@ -422,3 +422,29 @@ func Reset() {
 	// Reset viper state
 	viper.Reset()
 }
+
+func Changed(o, n any) bool {
+	if o == nil && n == nil {
+		return false
+	}
+
+	if o == nil || n == nil {
+		return true
+	}
+
+	ov := reflect.ValueOf(o)
+	nv := reflect.ValueOf(n)
+
+	if ov.Kind() == reflect.Ptr && !ov.IsNil() {
+		ov = ov.Elem()
+	}
+	if nv.Kind() == reflect.Ptr && !nv.IsNil() {
+		nv = nv.Elem()
+	}
+
+	if ov.Kind() != nv.Kind() {
+		return true
+	}
+
+	return !reflect.DeepEqual(ov.Interface(), nv.Interface())
+}

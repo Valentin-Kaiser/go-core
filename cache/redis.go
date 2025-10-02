@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/Valentin-Kaiser/go-core/config"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -43,6 +44,10 @@ func DefaultRedisConfig() RedisConfig {
 		WriteTimeout: time.Second * 3,
 		IdleTimeout:  time.Minute * 5,
 	}
+}
+
+func (rc *RedisConfig) Changed(n *RedisConfig) bool {
+	return config.Changed(rc, n)
 }
 
 // NewRedisCache creates a new Redis-backed cache
