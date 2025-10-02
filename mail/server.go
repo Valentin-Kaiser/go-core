@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -8,26 +9,121 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/emersion/go-smtp"
 	"github.com/rs/zerolog/log"
 )
+
+// SMTP errors
+var (
+	ErrServerClosed    = errors.New("smtp: server closed")
+	ErrAuthFailed      = errors.New("smtp: authentication failed")
+	ErrAuthRequired    = errors.New("smtp: authentication required")
+	ErrAuthUnsupported = errors.New("smtp: authentication method not supported")
+)
+
+// SMTP response codes
+const (
+	StatusReady          = 220
+	StatusClosing        = 221
+	StatusOK             = 250
+	StatusStartData      = 354
+	StatusAuthSuccessful = 235
+	StatusAuthContinue   = 334
+
+	StatusBadCommand     = 500
+	StatusBadSyntax      = 501
+	StatusNotImplemented = 502
+	StatusBadSequence    = 503
+	StatusTempFailure    = 451
+	StatusPermFailure    = 550
+	StatusAuthFailed     = 535
+	StatusAuthRequired   = 530
+)
+
+// MailOptions represents MAIL command options
+type MailOptions struct {
+	Size int64
+	Body string
+	UTF8 bool
+}
+
+// RcptOptions represents RCPT command options
+type RcptOptions struct {
+	Notify string
+}
+
+// Backend defines the interface for SMTP backends
+type Backend interface {
+	NewSession(conn *Conn) (Session, error)
+}
+
+// Session defines the interface for SMTP sessions
+type Session interface {
+	AuthPlain(username, password string) error
+	Mail(from string, opts *MailOptions) error
+	Rcpt(to string, opts *RcptOptions) error
+	Data(r io.Reader) error
+	Reset()
+	Logout() error
+}
+
+// Conn represents an SMTP connection
+type Conn struct {
+	conn          net.Conn
+	scanner       *bufio.Scanner
+	writer        *bufio.Writer
+	hostname      string
+	ehlo          bool
+	tls           bool
+	authenticated bool
+	mutex         sync.RWMutex
+}
+
+// NewConn creates a new SMTP connection wrapper
+func NewConn(conn net.Conn) *Conn {
+	return &Conn{
+		conn:    conn,
+		scanner: bufio.NewScanner(conn),
+		writer:  bufio.NewWriter(conn),
+	}
+}
+
+// Conn returns the underlying network connection
+func (c *Conn) Conn() net.Conn {
+	return c.conn
+}
+
+// Hostname returns the hostname provided by the client in HELO/EHLO
+func (c *Conn) Hostname() string {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.hostname
+}
+
+// TLS returns true if the connection is using TLS
+func (c *Conn) TLS() bool {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.tls
+}
 
 // smtpServer manages SMTP server operations and handles incoming messages
 type smtpServer struct {
 	config           ServerConfig
-	server           *smtp.Server
 	manager          *Manager
 	handlers         []NotificationHandler
 	running          int32
@@ -38,6 +134,11 @@ type smtpServer struct {
 	cancel           context.CancelFunc // Cancel function for server lifecycle
 	wg               sync.WaitGroup     // WaitGroup for graceful shutdown
 	security         *SecurityManager   // Security manager for validations
+
+	listener   net.Listener
+	shutdown   chan struct{}
+	closed     bool
+	protocolWg sync.WaitGroup // Separate WaitGroup for protocol connections
 }
 
 // handlerTask represents a pending notification handler task
@@ -66,6 +167,7 @@ func NewSMTPServer(config ServerConfig, manager *Manager) Server {
 		ctx:              ctx,
 		cancel:           cancel,
 		security:         NewSecurityManager(config.Security),
+		shutdown:         make(chan struct{}),
 	}
 
 	// Start worker pool for handling queued notification tasks
@@ -78,40 +180,17 @@ func (s *smtpServer) Start(_ context.Context) error {
 	if !atomic.CompareAndSwapInt32(&s.running, 0, 1) {
 		return apperror.NewError("SMTP server is already running")
 	}
-	// Create SMTP server
-	s.server = smtp.NewServer(&backend{server: s})
-
-	// Configure server
-	s.server.Addr = fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
-	s.server.Domain = s.config.Domain
-	s.server.ReadTimeout = s.config.ReadTimeout
-	s.server.WriteTimeout = s.config.WriteTimeout
-	s.server.MaxMessageBytes = s.config.MaxMessageBytes
-	s.server.MaxRecipients = s.config.MaxRecipients
-	s.server.AllowInsecureAuth = s.config.AllowInsecureAuth
-
-	// Configure TLS if enabled
-	if s.config.TLS {
-		tlsConfig, err := s.loadTLSConfig()
-		if err != nil {
-			atomic.StoreInt32(&s.running, 0)
-			return apperror.Wrap(err)
-		}
-		s.server.TLSConfig = tlsConfig
-	}
-
 	// Start server in goroutine
 	serverReady := make(chan error, 1)
 	go func() {
 		var err error
 		if s.config.TLS {
-			err = s.server.ListenAndServeTLS()
-		}
-		if !s.config.TLS {
-			err = s.server.ListenAndServe()
+			err = s.ListenAndServeTLS()
+		} else {
+			err = s.ListenAndServe()
 		}
 
-		if err != nil && err != smtp.ErrServerClosed {
+		if err != nil && err != ErrServerClosed {
 			log.Error().Err(err).Msg("[Mail] SMTP server error")
 			select {
 			case serverReady <- err:
@@ -129,7 +208,8 @@ func (s *smtpServer) Start(_ context.Context) error {
 			time.Sleep(10 * time.Millisecond)
 
 			// Try to connect to the server
-			conn, err := net.DialTimeout("tcp", s.server.Addr, 100*time.Millisecond)
+			addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
+			conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 			if err == nil {
 				apperror.Catch(conn.Close, "failed to close connection")
 				select {
@@ -168,17 +248,27 @@ func (s *smtpServer) Stop(ctx context.Context) error {
 
 	// Cancel context to stop worker pool
 	s.cancel()
-	if s.server != nil {
-		if err := s.server.Close(); err != nil {
+
+	// Close SMTP server
+	s.mutex.Lock()
+	if s.listener != nil {
+		if err := s.listener.Close(); err != nil {
 			log.Error().Err(err).Msg("[Mail] Failed to close SMTP server")
+			s.mutex.Unlock()
 			return apperror.Wrap(err)
 		}
 	}
+	if !s.closed {
+		s.closed = true
+		close(s.shutdown)
+	}
+	s.mutex.Unlock()
 
 	// Wait for worker pool to finish with timeout
 	done := make(chan struct{})
 	go func() {
-		s.wg.Wait()
+		s.wg.Wait()         // Wait for handler workers
+		s.protocolWg.Wait() // Wait for SMTP protocol connections
 		close(done)
 	}()
 
@@ -383,7 +473,7 @@ type backend struct {
 }
 
 // NewSession creates a new SMTP session
-func (b *backend) NewSession(conn *smtp.Conn) (smtp.Session, error) {
+func (b *backend) NewSession(conn *Conn) (Session, error) {
 	remoteAddr := conn.Conn().RemoteAddr().String()
 
 	log.Trace().
@@ -406,10 +496,10 @@ func (b *backend) NewSession(conn *smtp.Conn) (smtp.Session, error) {
 	}, nil
 }
 
-// session implements the smtp.Session interface
+// session implements the Session interface
 type session struct {
 	server        *smtpServer
-	conn          *smtp.Conn
+	conn          *Conn
 	remoteAddr    string
 	authenticated bool
 	from          string
@@ -424,7 +514,7 @@ func (s *session) validateHeloIfNeeded() error {
 	}
 
 	// Get the HELO hostname from the connection
-	// The go-smtp library stores this in the connection's Hostname() method
+	// The internal SMTP implementation stores this in the connection's Hostname() method
 	hostname := s.conn.Hostname()
 
 	if err := s.server.security.ValidateHelo(hostname, s.remoteAddr); err != nil {
@@ -453,11 +543,11 @@ func (s *session) AuthPlain(username, password string) error {
 			Str("remote_addr", s.remoteAddr).
 			Str("username", username).
 			Msg("[Mail] Authentication rate limit exceeded")
-		return smtp.ErrAuthFailed
+		return ErrAuthFailed
 	}
 
 	if !s.server.config.Auth {
-		return smtp.ErrAuthUnsupported
+		return ErrAuthUnsupported
 	}
 
 	log.Trace().
@@ -478,11 +568,11 @@ func (s *session) AuthPlain(username, password string) error {
 	}
 
 	log.Warn().Str("username", username).Msg("[Mail] SMTP authentication failed")
-	return smtp.ErrAuthFailed
+	return ErrAuthFailed
 }
 
 // Mail handles the MAIL FROM command
-func (s *session) Mail(from string, _ *smtp.MailOptions) error {
+func (s *session) Mail(from string, _ *MailOptions) error {
 	// Validate HELO first if needed
 	if err := s.validateHeloIfNeeded(); err != nil {
 		return err
@@ -499,7 +589,7 @@ func (s *session) Mail(from string, _ *smtp.MailOptions) error {
 
 	if s.server.config.Auth && !s.authenticated {
 		log.Warn().Str("from", from).Msg("[Mail] Unauthenticated MAIL command rejected")
-		return smtp.ErrAuthRequired
+		return ErrAuthRequired
 	}
 
 	log.Trace().Str("from", from).Msg("[Mail] MAIL FROM")
@@ -508,7 +598,7 @@ func (s *session) Mail(from string, _ *smtp.MailOptions) error {
 }
 
 // Rcpt handles the RCPT TO command
-func (s *session) Rcpt(to string, _ *smtp.RcptOptions) error {
+func (s *session) Rcpt(to string, _ *RcptOptions) error {
 	// Validate HELO first if needed
 	if err := s.validateHeloIfNeeded(); err != nil {
 		return err
@@ -525,7 +615,7 @@ func (s *session) Rcpt(to string, _ *smtp.RcptOptions) error {
 
 	if s.server.config.Auth && !s.authenticated {
 		log.Warn().Str("to", to).Msg("[Mail] Unauthenticated RCPT command rejected")
-		return smtp.ErrAuthRequired
+		return ErrAuthRequired
 	}
 
 	s.to = append(s.to, to)
@@ -541,7 +631,7 @@ func (s *session) Data(r io.Reader) error {
 
 	if s.server.config.Auth && !s.authenticated {
 		log.Warn().Msg("[Mail] Unauthenticated DATA command rejected")
-		return smtp.ErrAuthRequired
+		return ErrAuthRequired
 	}
 
 	// Read message data
@@ -575,4 +665,506 @@ func (s *session) Logout() error {
 	s.server.security.CloseConnection(s.remoteAddr)
 	log.Debug().Msg("[Mail] SMTP session logout")
 	return nil
+}
+
+// ListenAndServe starts the server on the configured address
+func (s *smtpServer) ListenAndServe() error {
+	addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	return s.Serve(listener)
+}
+
+// ListenAndServeTLS starts the server with TLS on the configured address
+func (s *smtpServer) ListenAndServeTLS() error {
+	addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
+	tlsConfig, err := s.loadTLSConfig()
+	if err != nil {
+		return err
+	}
+	listener, err := tls.Listen("tcp", addr, tlsConfig)
+	if err != nil {
+		return err
+	}
+	return s.Serve(listener)
+}
+
+// Serve accepts incoming connections on the listener
+func (s *smtpServer) Serve(listener net.Listener) error {
+	s.mutex.Lock()
+	s.listener = listener
+	s.mutex.Unlock()
+
+	defer func() {
+		s.mutex.Lock()
+		s.listener = nil
+		s.mutex.Unlock()
+	}()
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			select {
+			case <-s.shutdown:
+				return ErrServerClosed
+			default:
+				return err
+			}
+		}
+
+		s.protocolWg.Add(1)
+		go func() {
+			defer s.protocolWg.Done()
+			s.handleConnection(conn)
+		}()
+	}
+}
+
+// handleConnection handles a single SMTP connection
+func (s *smtpServer) handleConnection(netConn net.Conn) {
+	defer func() {
+		if err := netConn.Close(); err != nil {
+			// Check if this is a normal connection close/reset
+			if isConnectionClosed(err) {
+				log.Debug().Err(err).Msg("[Mail] Connection closed")
+				return
+			}
+			log.Error().Err(err).Msg("[Mail] Failed to close connection")
+		}
+	}()
+
+	// Set timeouts
+	if s.config.ReadTimeout > 0 {
+		if err := netConn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
+			if isConnectionClosed(err) {
+				log.Debug().Err(err).Msg("[Mail] Connection closed while setting read deadline")
+				return
+			}
+			log.Error().Err(err).Msg("[Mail] Failed to set read deadline")
+			return
+		}
+	}
+	if s.config.WriteTimeout > 0 {
+		if err := netConn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
+			if isConnectionClosed(err) {
+				log.Debug().Err(err).Msg("[Mail] Connection closed while setting write deadline")
+				return
+			}
+			log.Error().Err(err).Msg("[Mail] Failed to set write deadline")
+			return
+		}
+	}
+
+	conn := NewConn(netConn)
+	session, err := s.NewSession(conn)
+	if err != nil {
+		s.writeResponse(conn, StatusPermFailure, "Connection rejected")
+		return
+	}
+	defer session.Logout()
+
+	// Send greeting
+	greeting := fmt.Sprintf("%s ESMTP Service Ready", s.config.Domain)
+	if s.config.Domain == "" {
+		greeting = "ESMTP Service Ready"
+	}
+	s.writeResponse(conn, StatusReady, greeting)
+
+	// Handle commands
+	s.handleCommands(conn, session)
+}
+
+// NewSession creates a new SMTP session (implements Backend interface)
+func (s *smtpServer) NewSession(conn *Conn) (Session, error) {
+	remoteAddr := conn.Conn().RemoteAddr().String()
+
+	log.Trace().
+		Str("remote_addr", remoteAddr).
+		Msg("[Mail] New SMTP session")
+
+	// Validate connection using security manager
+	if err := s.security.ValidateConnection(remoteAddr); err != nil {
+		log.Warn().
+			Str("remote_addr", remoteAddr).
+			Err(err).
+			Msg("[Mail] Connection rejected by security manager")
+		return nil, err
+	}
+
+	return &session{
+		server:     s,
+		conn:       conn,
+		remoteAddr: remoteAddr,
+	}, nil
+}
+
+// handleCommands processes SMTP commands from the client
+func (s *smtpServer) handleCommands(conn *Conn, session Session) {
+	for {
+		// Update read deadline
+		if s.config.ReadTimeout > 0 {
+			if err := conn.conn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
+				if isConnectionClosed(err) {
+					log.Debug().Err(err).Msg("[Mail] Connection closed while updating read deadline")
+					return
+				}
+				log.Error().Err(err).Msg("[Mail] Failed to update read deadline")
+				return
+			}
+		}
+
+		if !conn.scanner.Scan() {
+			if err := conn.scanner.Err(); err != nil {
+				// Check if this is a normal connection close/reset
+				if isConnectionClosed(err) {
+					log.Debug().Err(err).Msg("[Mail] Client disconnected")
+					return
+				}
+				log.Error().Err(err).Msg("[Mail] Connection read error")
+			}
+			return
+		}
+
+		line := strings.TrimSpace(conn.scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		log.Trace().Str("command", line).Msg("[Mail] Received SMTP command")
+
+		parts := strings.SplitN(line, " ", 2)
+		command := strings.ToUpper(parts[0])
+		args := ""
+		if len(parts) > 1 {
+			args = parts[1]
+		}
+
+		switch command {
+		case "HELO":
+			s.handleHelo(conn, args, false)
+		case "EHLO":
+			s.handleHelo(conn, args, true)
+		case "STARTTLS":
+			if s.handleStartTLS(conn) {
+				return // Connection upgraded to TLS, start over
+			}
+		case "AUTH":
+			s.handleAuth(conn, session, args)
+		case "MAIL":
+			s.handleMail(conn, session, args)
+		case "RCPT":
+			s.handleRcpt(conn, session, args)
+		case "DATA":
+			s.handleData(conn, session)
+		case "RSET":
+			session.Reset()
+			s.writeResponse(conn, StatusOK, "OK")
+		case "NOOP":
+			s.writeResponse(conn, StatusOK, "OK")
+		case "QUIT":
+			s.writeResponse(conn, StatusClosing, "Bye")
+			return
+		default:
+			s.writeResponse(conn, StatusNotImplemented, "Command not implemented")
+		}
+	}
+}
+
+// writeResponse writes a single-line SMTP response
+func (s *smtpServer) writeResponse(conn *Conn, code int, message string) {
+	response := fmt.Sprintf("%d %s\r\n", code, message)
+	s.writeRaw(conn, response)
+}
+
+// writeMultiResponse writes a multi-line SMTP response
+func (s *smtpServer) writeMultiResponse(conn *Conn, code int, messages []string) {
+	for i, message := range messages {
+		var response string
+		if i == len(messages)-1 {
+			response = fmt.Sprintf("%d %s\r\n", code, message)
+		} else {
+			response = fmt.Sprintf("%d-%s\r\n", code, message)
+		}
+		s.writeRaw(conn, response)
+	}
+}
+
+// writeRaw writes raw data to the connection
+func (s *smtpServer) writeRaw(conn *Conn, data string) {
+	if s.config.WriteTimeout > 0 {
+		if err := conn.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
+			if isConnectionClosed(err) {
+				log.Debug().Err(err).Msg("[Mail] Connection closed while setting write deadline")
+				return
+			}
+			log.Warn().Err(err).Msg("[Mail] Failed to set write deadline, continuing anyway")
+		}
+	}
+
+	conn.writer.WriteString(data)
+	conn.writer.Flush()
+
+	log.Trace().Str("response", strings.TrimSpace(data)).Msg("[Mail] Sent SMTP response")
+}
+
+// isConnectionClosed checks if an error indicates a normal connection close/reset
+func isConnectionClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Common connection close/reset patterns
+	patterns := []string{
+		"connection reset by peer",
+		"broken pipe",
+		"connection aborted",
+		"wsarecv:",
+		"wsasend:",
+		"connection refused",
+		"network is unreachable",
+		"no route to host",
+		"connection timed out",
+		"EOF",
+	}
+
+	errStrLower := strings.ToLower(errStr)
+	for _, pattern := range patterns {
+		if strings.Contains(errStrLower, pattern) {
+			return true
+		}
+	}
+
+	// Check for specific error types
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+
+	return false
+}
+
+// handleHelo handles HELO/EHLO commands
+func (s *smtpServer) handleHelo(conn *Conn, hostname string, extended bool) {
+	if hostname == "" {
+		s.writeResponse(conn, StatusBadSyntax, "Hostname required")
+		return
+	}
+
+	conn.mutex.Lock()
+	conn.hostname = hostname
+	conn.ehlo = extended
+	conn.mutex.Unlock()
+
+	if extended {
+		responses := []string{s.config.Domain + " Hello " + hostname}
+
+		// Add supported extensions
+		if s.config.TLS && !conn.TLS() {
+			responses = append(responses, "STARTTLS")
+		}
+		responses = append(responses, "AUTH PLAIN")
+		if s.config.MaxMessageBytes > 0 {
+			responses = append(responses, fmt.Sprintf("SIZE %d", s.config.MaxMessageBytes))
+		}
+
+		s.writeMultiResponse(conn, StatusOK, responses)
+	} else {
+		s.writeResponse(conn, StatusOK, s.config.Domain+" Hello "+hostname)
+	}
+}
+
+// handleStartTLS handles STARTTLS command
+func (s *smtpServer) handleStartTLS(conn *Conn) bool {
+	tlsConfig, err := s.loadTLSConfig()
+	if err != nil {
+		s.writeResponse(conn, StatusNotImplemented, "TLS not available")
+		return false
+	}
+
+	if conn.TLS() {
+		s.writeResponse(conn, StatusBadSequence, "Already using TLS")
+		return false
+	}
+
+	s.writeResponse(conn, StatusReady, "Ready to start TLS")
+
+	// Upgrade connection to TLS
+	tlsConn := tls.Server(conn.conn, tlsConfig)
+	if err := tlsConn.Handshake(); err != nil {
+		log.Error().Err(err).Msg("[Mail] TLS handshake failed")
+		return false
+	}
+
+	conn.mutex.Lock()
+	conn.conn = tlsConn
+	conn.scanner = bufio.NewScanner(tlsConn)
+	conn.writer = bufio.NewWriter(tlsConn)
+	conn.tls = true
+	conn.authenticated = false // Reset auth after STARTTLS
+	conn.mutex.Unlock()
+
+	return false // Don't restart connection handling
+}
+
+// handleAuth handles AUTH command
+func (s *smtpServer) handleAuth(conn *Conn, session Session, args string) {
+	parts := strings.SplitN(args, " ", 2)
+	if len(parts) < 1 {
+		s.writeResponse(conn, StatusBadSyntax, "AUTH method required")
+		return
+	}
+
+	method := strings.ToUpper(parts[0])
+	switch method {
+	case "PLAIN":
+		s.handleAuthPlain(conn, session, parts)
+	default:
+		s.writeResponse(conn, StatusNotImplemented, "Authentication method not supported")
+	}
+}
+
+// handleAuthPlain handles PLAIN authentication
+func (s *smtpServer) handleAuthPlain(conn *Conn, session Session, parts []string) {
+	var username, password string
+
+	if len(parts) == 2 {
+		// Credentials provided in initial command
+		decoded, err := s.decodePlainAuth(parts[1])
+		if err != nil {
+			s.writeResponse(conn, StatusBadSyntax, "Invalid authentication data")
+			return
+		}
+		username, password = decoded[0], decoded[1]
+	} else {
+		// Request credentials
+		s.writeResponse(conn, StatusAuthContinue, "")
+
+		if !conn.scanner.Scan() {
+			return
+		}
+
+		decoded, err := s.decodePlainAuth(strings.TrimSpace(conn.scanner.Text()))
+		if err != nil {
+			s.writeResponse(conn, StatusBadSyntax, "Invalid authentication data")
+			return
+		}
+		username, password = decoded[0], decoded[1]
+	}
+
+	if err := session.AuthPlain(username, password); err != nil {
+		if errors.Is(err, ErrAuthFailed) {
+			s.writeResponse(conn, StatusAuthFailed, "Authentication failed")
+		} else if errors.Is(err, ErrAuthUnsupported) {
+			s.writeResponse(conn, StatusNotImplemented, "Authentication method not supported")
+		} else {
+			s.writeResponse(conn, StatusTempFailure, "Authentication error")
+		}
+		return
+	}
+
+	conn.mutex.Lock()
+	conn.authenticated = true
+	conn.mutex.Unlock()
+
+	s.writeResponse(conn, StatusAuthSuccessful, "Authentication successful")
+}
+
+// decodePlainAuth decodes PLAIN authentication data
+func (s *smtpServer) decodePlainAuth(data string) ([]string, error) {
+	// Base64 decode the authentication data
+	decoded, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 encoding: %w", err)
+	}
+
+	// Format: \0username\0password
+	parts := strings.Split(string(decoded), "\x00")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid plain auth format")
+	}
+	return []string{parts[1], parts[2]}, nil
+}
+
+// handleMail handles MAIL command
+func (s *smtpServer) handleMail(conn *Conn, session Session, args string) {
+	if !strings.HasPrefix(strings.ToUpper(args), "FROM:") {
+		s.writeResponse(conn, StatusBadSyntax, "MAIL FROM required")
+		return
+	}
+
+	from := strings.TrimSpace(args[5:])
+	from = strings.Trim(from, "<>")
+
+	opts := &MailOptions{}
+	if err := session.Mail(from, opts); err != nil {
+		if errors.Is(err, ErrAuthRequired) {
+			s.writeResponse(conn, StatusAuthRequired, "Authentication required")
+		} else {
+			s.writeResponse(conn, StatusPermFailure, "MAIL command failed")
+		}
+		return
+	}
+
+	s.writeResponse(conn, StatusOK, "OK")
+}
+
+// handleRcpt handles RCPT command
+func (s *smtpServer) handleRcpt(conn *Conn, session Session, args string) {
+	if !strings.HasPrefix(strings.ToUpper(args), "TO:") {
+		s.writeResponse(conn, StatusBadSyntax, "RCPT TO required")
+		return
+	}
+
+	to := strings.TrimSpace(args[3:])
+	to = strings.Trim(to, "<>")
+
+	opts := &RcptOptions{}
+	if err := session.Rcpt(to, opts); err != nil {
+		if errors.Is(err, ErrAuthRequired) {
+			s.writeResponse(conn, StatusAuthRequired, "Authentication required")
+		} else {
+			s.writeResponse(conn, StatusPermFailure, "RCPT command failed")
+		}
+		return
+	}
+
+	s.writeResponse(conn, StatusOK, "OK")
+}
+
+// handleData handles DATA command
+func (s *smtpServer) handleData(conn *Conn, session Session) {
+	s.writeResponse(conn, StatusStartData, "Start mail input; end with <CRLF>.<CRLF>")
+
+	// Read message data until ".\r\n"
+	var data strings.Builder
+	for {
+		if !conn.scanner.Scan() {
+			return
+		}
+
+		line := conn.scanner.Text()
+		if line == "." {
+			break
+		}
+
+		// Handle dot-stuffing
+		line = strings.TrimPrefix(line, ".")
+
+		data.WriteString(line)
+		data.WriteString("\r\n")
+	}
+
+	if err := session.Data(strings.NewReader(data.String())); err != nil {
+		if errors.Is(err, ErrAuthRequired) {
+			s.writeResponse(conn, StatusAuthRequired, "Authentication required")
+		} else {
+			s.writeResponse(conn, StatusPermFailure, "Message rejected")
+		}
+		return
+	}
+
+	s.writeResponse(conn, StatusOK, "Message accepted")
 }
