@@ -180,7 +180,7 @@ func (s *Server) Start() *Server {
 		g.Go(func() error {
 			s.mutex.Lock()
 			s.server.TLSConfig = s.tlsConfig
-			s.server.Addr = fmt.Sprintf("%s:%d", s.host, s.port)
+			s.server.Addr = net.JoinHostPort(s.host, fmt.Sprintf("%d", s.port))
 			server := s.server
 			s.mutex.Unlock()
 
@@ -202,7 +202,7 @@ func (s *Server) Start() *Server {
 	log.Info().Msgf("[Web] listening on http at %s:%d", s.host, s.port)
 
 	s.mutex.Lock()
-	s.server.Addr = fmt.Sprintf("%s:%d", s.host, s.port)
+	s.server.Addr = net.JoinHostPort(s.host, fmt.Sprintf("%d", s.port))
 	s.mutex.Unlock()
 
 	// Get a reference to the server while holding the lock
@@ -576,7 +576,7 @@ func (s *Server) WithRedirectToHTTPS(port uint16) *Server {
 	}
 
 	s.redirect = &http.Server{
-		Addr: fmt.Sprintf("%s:%d", s.host, port),
+		Addr: net.JoinHostPort(s.host, fmt.Sprintf("%d", port)),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h, _, err := net.SplitHostPort(r.Host)
 			if err != nil {
