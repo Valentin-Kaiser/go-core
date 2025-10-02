@@ -104,13 +104,13 @@ func (d *DynamicAdapter) WithPackage(pkg string) Adapter {
 	return d.current().WithPackage(pkg)
 }
 
-// WithDebug sets whether to use caller tracking
-func WithDebug(d bool) {
+// Debug sets whether to use caller tracking
+func Debug(d bool) {
 	debug = d
 }
 
-// WithAnonymous sets whether to use anonymous caller tracking
-func WithAnonymous(a bool) {
+// Anonymous sets whether to use anonymous caller tracking
+func Anonymous(a bool) {
 	anonymous = a
 }
 
