@@ -23,7 +23,7 @@ func init() {
 	if !interactive {
 		flag.Path, err = os.Executable()
 		if err != nil {
-			logger.Error().Fields(logging.F("error", err)).Msg("[Init] creating service failed")
+			logger.Error().Fields(logging.F("error", err)).Msg("creating service failed")
 			return
 		}
 		flag.Path = filepath.Join(filepath.Dir(flag.Path), "data")
@@ -31,7 +31,7 @@ func init() {
 
 	flag.Path, err = filepath.Abs(flag.Path)
 	if err != nil {
-		logger.Error().Fields(logging.F("error", err)).Msg("[Init] determining absolute path failed")
+		logger.Error().Fields(logging.F("error", err)).Msg("determining absolute path failed")
 		return
 	}
 }

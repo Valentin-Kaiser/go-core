@@ -203,7 +203,7 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 		logging.F("task_name", name),
 		logging.F("cron_spec", cronSpec),
 		logging.F("next_run", nextRun),
-	).Msg("Cron task registered")
+	).Msg("cron task registered")
 
 	return nil
 }
@@ -267,7 +267,7 @@ func (s *TaskScheduler) RegisterIntervalTaskWithOptions(name string, interval ti
 		logging.F("task_name", name),
 		logging.F("interval", interval),
 		logging.F("next_run", task.NextRun),
-	).Msg("Interval task registered")
+	).Msg("interval task registered")
 
 	return nil
 }
@@ -505,7 +505,7 @@ func (s *TaskScheduler) Start(ctx context.Context) error {
 	s.workerWg.Add(1)
 	go s.schedulerLoop(ctx)
 
-	logger.Info().Msg("Task scheduler started")
+	logger.Info().Msg("task scheduler started")
 	return nil
 }
 
@@ -515,7 +515,7 @@ func (s *TaskScheduler) Stop() {
 		return
 	}
 
-	logger.Info().Msg("Stopping task scheduler...")
+	logger.Info().Msg("stopping task scheduler...")
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -523,7 +523,7 @@ func (s *TaskScheduler) Stop() {
 	close(s.shutdownChan)
 	s.workerWg.Wait()
 
-	logger.Info().Msg("Task scheduler stopped")
+	logger.Info().Msg("task scheduler stopped")
 }
 
 // schedulerLoop is the main scheduler loop
@@ -609,7 +609,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 			}
 			s.tasksMutex.Unlock()
 
-			logger.Info().
+			logger.Debug().
 				Field("task_name", task.Name).
 				Field("run_count", task.RunCount).
 				Field("next_run", task.NextRun).

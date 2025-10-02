@@ -120,7 +120,7 @@ func (l *logger) Stop() {
 
 	err := l.file.Close()
 	if err != nil {
-		log.Error().Err(err).Msgf("[Logger] failed to close log file")
+		log.Error().Err(err).Msgf("failed to close log file")
 	}
 }
 
@@ -129,7 +129,7 @@ func (l *logger) Stop() {
 func (l *logger) Rotate() {
 	err := l.file.Rotate()
 	if err != nil {
-		log.Error().Err(err).Msgf("[Logger] failed to rotate log file")
+		log.Error().Err(err).Msgf("failed to rotate log file")
 	}
 }
 

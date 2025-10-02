@@ -128,14 +128,14 @@ func Connected() bool {
 
 // Reconnect will set the connected state to false and trigger a reconnect
 func Reconnect() {
-	logger.Trace().Msg("[Database] reconnecting...")
+	logger.Trace().Msg("reconnecting...")
 	connected.Store(false)
 	failed.Store(false)
 }
 
 // Disconnect will stop the database connection and wait for the connection to be closed
 func Disconnect() error {
-	logger.Trace().Msg("[Database] closing connection...")
+	logger.Trace().Msg("closing connection...")
 	cancel.Store(true)
 	if connected.Load() && db != nil {
 		sdb, err := db.DB()
@@ -148,7 +148,7 @@ func Disconnect() error {
 		}
 	}
 	<-done
-	logger.Trace().Msg("[Database] connection closed")
+	logger.Trace().Msg("connection closed")
 	return nil
 }
 
@@ -175,7 +175,7 @@ func Connect(interval time.Duration, config Config) {
 					if err != nil {
 						// Prevent spamming the logs with connection errors
 						if !failed.Load() {
-							logger.Error().Err(err).Msg("[Database] connection failed")
+							logger.Error().Err(err).Msg("connection failed")
 						}
 						failed.Store(true)
 						return
@@ -194,18 +194,18 @@ func Connect(interval time.Duration, config Config) {
 					for _, handler := range handlers {
 						err := handler(dbInstance, config)
 						if err != nil {
-							logger.Error().Err(err).Msg("[Database] onConnect handler failed")
+							logger.Error().Err(err).Msg("onConnect handler failed")
 							failed.Store(true)
 							return
 						}
 					}
 
 					if failed.Load() {
-						logger.Info().Msg("[Database] connection restored")
+						logger.Info().Msg("connection restored")
 					}
 					failed.Store(false)
 					connected.Store(true)
-					logger.Debug().Msg("[Database] connection established")
+					logger.Debug().Msg("connection established")
 					return
 				}
 
@@ -218,7 +218,7 @@ func Connect(interval time.Duration, config Config) {
 				if dbInstance != nil {
 					err := dbInstance.Exec("SELECT 1;").Error
 					if err != nil && connected.Load() {
-						logger.Error().Err(err).Msg("[Database] connection lost")
+						logger.Error().Err(err).Msg("connection lost")
 						connected.Store(false)
 						failed.Store(true)
 					}
@@ -331,20 +331,20 @@ func connect(config Config) (*gorm.DB, error) {
 func onConnect(config Config) {
 	err := setup(db)
 	if err != nil {
-		logger.Fatal().Err(err).Msg("[Database] schema setup failed")
+		logger.Fatal().Err(err).Msg("schema setup failed")
 	}
 
 	// Check for the current version in the database
 	revision := version.Get()
 	err = db.Where("git_tag = ? AND git_commit = ?", revision.GitTag, revision.GitCommit).First(&version.Release{}).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		logger.Fatal().Err(err).Msg("[Database] version check failed")
+		logger.Fatal().Err(err).Msg("version check failed")
 	}
 
 	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 		err = migrateSchema(db)
 		if err != nil {
-			logger.Fatal().Err(err).Msg("[Database] schema migration failed")
+			logger.Fatal().Err(err).Msg("schema migration failed")
 		}
 
 		for _, steps := range getMigrationSteps() {
@@ -359,28 +359,28 @@ func onConnect(config Config) {
 					// Execute all migration step actions for this version
 					err = step.Action(db)
 					if err != nil {
-						logger.Fatal().Err(err).Msg("[Database] migration failed")
+						logger.Fatal().Err(err).Msg("migration failed")
 					}
 				}
 
 				// Create the version record for this migration step
 				err = db.Create(&steps[0].Version).Error
 				if err != nil {
-					logger.Fatal().Err(err).Msg("[Database] version creation failed")
+					logger.Fatal().Err(err).Msg("version creation failed")
 				}
 			}
 		}
 
 		err = db.Create(&revision).Error
 		if err != nil {
-			logger.Fatal().Err(err).Msg("[Database] version creation failed")
+			logger.Fatal().Err(err).Msg("version creation failed")
 		}
 	}
 
 	if config.Driver == "sqlite" {
 		err = db.Exec("VACUUM;").Error
 		if err != nil {
-			logger.Warn().Err(err).Msg("[Database] vacuum failed")
+			logger.Warn().Err(err).Msg("vacuum failed")
 		}
 	}
 }

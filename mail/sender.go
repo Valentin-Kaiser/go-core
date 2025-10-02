@@ -22,6 +22,10 @@ type smtpSender struct {
 
 // NewSMTPSender creates a new SMTP sender with configurable security
 func NewSMTPSender(config ClientConfig, templateManager *TemplateManager) Sender {
+	if config.Enabled {
+		logger.Info().Msgf("sender configured to send emails via %s:%d using %s encryption", config.Host, config.Port, config.Encryption)
+	}
+
 	return &smtpSender{
 		config:          config,
 		templateManager: templateManager,
@@ -55,7 +59,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 	// Send with retries
 	for attempt := 0; attempt <= s.config.MaxRetries; attempt++ {
 		if attempt > 0 {
-			logger.Warn().Field("attempt", attempt).Field("message_id", message.ID).Msg("[Mail] Retrying email send")
+			logger.Warn().Field("attempt", attempt).Field("message_id", message.ID).Msg("retrying email send")
 
 			select {
 			case <-ctx.Done():
@@ -70,7 +74,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 			return nil
 		}
 
-		logger.Error().Err(err).Field("attempt", attempt).Field("message_id", message.ID).Msg("[Mail] Failed to send email via SMTP")
+		logger.Error().Err(err).Field("attempt", attempt).Field("message_id", message.ID).Msg("failed to send email via SMTP")
 
 		if attempt == s.config.MaxRetries {
 			break

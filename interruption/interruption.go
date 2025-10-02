@@ -65,10 +65,10 @@ func Catch() {
 		}
 
 		if flag.Debug {
-			logger.Error().Msgf("[Interrupt] %v code: %v => %v \n %v", caller, line, err, string(debug.Stack()))
+			logger.Error().Msgf("%v code: %v => %v \n %v", caller, line, err, string(debug.Stack()))
 			return
 		}
-		logger.Error().Msgf("[Interrupt] %v code: %v => %v", caller, line, err)
+		logger.Error().Msgf("%v code: %v => %v", caller, line, err)
 	}
 }
 
@@ -100,7 +100,7 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 			func() {
 				defer Catch()
 				if err := handler(); err != nil {
-					logger.Error().Err(err).Msgf("[Signal] handler failed")
+					logger.Error().Err(err).Msgf("handler failed")
 				}
 			}()
 		}
@@ -119,7 +119,7 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 //
 //		ctx := interruption.OnSignal([]func() error{
 //			func() error {
-//				log.Info().Msg("Shutting down gracefully...")
+//				log.Info().Msg("shutting down gracefully...")
 //				return nil
 //			},
 //		}, os.Interrupt, syscall.SIGTERM)
@@ -127,7 +127,7 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 //		defer interruption.WaitForShutdown(ctx)
 //
 //		// Your application logic here
-//		log.Info().Msg("Application running...")
+//		log.Info().Msg("application running...")
 //
 //		// Application will wait for signal and graceful shutdown when function exits
 //	}
@@ -149,19 +149,19 @@ func WaitForShutdown(ctx context.Context) {
 //
 //		defer interruption.SetupGracefulShutdown([]func() error{
 //			func() error {
-//				log.Info().Msg("Database disconnecting...")
+//				log.Info().Msg("database disconnecting...")
 //				// database.Disconnect()
 //				return nil
 //			},
 //			func() error {
-//				log.Info().Msg("Web server stopping...")
+//				log.Info().Msg("web server stopping...")
 //				// web.Instance().Stop()
 //				return nil
 //			},
 //		}, os.Interrupt, syscall.SIGTERM)
 //
 //		// Your application logic here
-//		log.Info().Msg("Application running...")
+//		log.Info().Msg("application running...")
 //
 //		// Application will automatically wait for graceful shutdown when function exits
 //	}

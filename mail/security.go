@@ -110,9 +110,9 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 	ip := net.ParseIP(host)
 	if ip == nil {
 		if sm.config.LogSecurityEvents {
-			logger.Warn().Field("remote_addr", remoteAddr).Msg("[Mail] Invalid IP address in connection")
+			logger.Warn().Field("remote_addr", remoteAddr).Msg("invalid IP address in connection")
 		}
-		return &SecurityError{Type: "invalid_ip", Message: "Invalid IP address"}
+		return &SecurityError{Type: "invalid_ip", Message: "invalid IP address"}
 	}
 
 	sm.mutex.Lock()
@@ -121,7 +121,7 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 	// Check if IP is blocked
 	if sm.isIPBlocked(ip) {
 		if sm.config.LogSecurityEvents {
-			logger.Warn().Field("ip", ip.String()).Msg("[Mail] Connection blocked - IP in blocklist")
+			logger.Warn().Field("ip", ip.String()).Msg("connection blocked - IP in blocklist")
 		}
 		return &SecurityError{Type: "ip_blocked", Message: "IP address is blocked"}
 	}
@@ -129,7 +129,7 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 	// Check if IP is in allowlist (if allowlist is configured)
 	if len(sm.allowedNetworks) > 0 && !sm.isIPAllowed(ip) {
 		if sm.config.LogSecurityEvents {
-			logger.Warn().Field("ip", ip.String()).Msg("[Mail] Connection denied - IP not in allowlist")
+			logger.Warn().Field("ip", ip.String()).Msg("connection denied - IP not in allowlist")
 		}
 		return &SecurityError{Type: "ip_not_allowed", Message: "IP address is not allowed"}
 	}
@@ -142,9 +142,9 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 				logger.Warn().
 					Field("ip", ip.String()).
 					Field("connections", currentConnections).
-					Msg("[Mail] Connection limit exceeded")
+					Msg("connection limit exceeded")
 			}
-			return &SecurityError{Type: "connection_limit", Message: "Too many connections from this IP"}
+			return &SecurityError{Type: "connection_limit", Message: "too many connections from this IP"}
 		}
 	}
 
@@ -152,7 +152,7 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 	if tracker, exists := sm.authFailures[ip.String()]; exists && tracker.blocked {
 		if time.Since(tracker.blockedTime) < sm.config.AuthFailureWindow {
 			if sm.config.LogSecurityEvents {
-				logger.Warn().Field("ip", ip.String()).Msg("[Mail] Connection blocked due to authentication failures")
+				logger.Warn().Field("ip", ip.String()).Msg("connection blocked due to authentication failures")
 			}
 			return &SecurityError{Type: "auth_blocked", Message: "IP temporarily blocked due to authentication failures"}
 		}
@@ -169,7 +169,7 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 		logger.Info().
 			Field("ip", ip.String()).
 			Field("connections", sm.ipConnections[ip.String()]).
-			Msg("[Mail] Connection accepted")
+			Msg("connection accepted")
 	}
 
 	return nil
@@ -189,7 +189,7 @@ func (sm *SecurityManager) ValidateHelo(hostname, remoteAddr string) error {
 	// Basic hostname validation
 	if hostname == "" {
 		if sm.config.LogSecurityEvents {
-			logger.Warn().Field("ip", host).Msg("[Mail] Empty HELO hostname")
+			logger.Warn().Field("ip", host).Msg("empty HELO hostname")
 		}
 		return &SecurityError{Type: "empty_helo", Message: "HELO hostname cannot be empty"}
 	}
@@ -198,7 +198,7 @@ func (sm *SecurityManager) ValidateHelo(hostname, remoteAddr string) error {
 	if sm.config.HeloRequireFQDN {
 		if !sm.isValidFQDN(hostname) {
 			if sm.config.LogSecurityEvents {
-				logger.Warn().Field("ip", host).Field("hostname", hostname).Msg("[Mail] Invalid FQDN in HELO")
+				logger.Warn().Field("ip", host).Field("hostname", hostname).Msg("invalid FQDN in HELO")
 			}
 			return &SecurityError{Type: "invalid_fqdn", Message: "HELO hostname must be a valid FQDN"}
 		}
@@ -212,14 +212,14 @@ func (sm *SecurityManager) ValidateHelo(hostname, remoteAddr string) error {
 		// Try to resolve the hostname
 		if _, err := net.DefaultResolver.LookupIPAddr(ctx, hostname); err != nil {
 			if sm.config.LogSecurityEvents {
-				logger.Warn().Field("ip", host).Field("hostname", hostname).Err(err).Msg("[Mail] DNS resolution failed for HELO hostname")
+				logger.Warn().Field("ip", host).Field("hostname", hostname).Err(err).Msg("DNS resolution failed for HELO hostname")
 			}
 			return &SecurityError{Type: "dns_resolution_failed", Message: "HELO hostname cannot be resolved"}
 		}
 	}
 
 	if sm.config.LogSecurityEvents {
-		logger.Info().Field("ip", host).Field("hostname", hostname).Msg("[Mail] HELO validation passed")
+		logger.Info().Field("ip", host).Field("hostname", hostname).Msg("HELO validation passed")
 	}
 
 	return nil
@@ -254,7 +254,7 @@ func (sm *SecurityManager) CheckRateLimit(remoteAddr string) error {
 	limiter.last = time.Now()
 	if !limiter.Allow() {
 		if sm.config.LogSecurityEvents {
-			logger.Warn().Field("ip", host).Msg("[Mail] Rate limit exceeded")
+			logger.Warn().Field("ip", host).Msg("rate limit exceeded")
 		}
 		return &SecurityError{Type: "rate_limit", Message: "Rate limit exceeded"}
 	}
@@ -300,7 +300,7 @@ func (sm *SecurityManager) RecordAuthFailure(remoteAddr string) {
 		tracker.blocked = true
 		tracker.blockedTime = now
 		if sm.config.LogSecurityEvents {
-			logger.Warn().Field("ip", host).Field("failures", tracker.failures).Msg("[Mail] IP blocked due to authentication failures")
+			logger.Warn().Field("ip", host).Field("failures", tracker.failures).Msg("IP blocked due to authentication failures")
 		}
 	}
 }
@@ -340,7 +340,7 @@ func (sm *SecurityManager) CloseConnection(remoteAddr string) {
 	}
 
 	if sm.config.LogSecurityEvents {
-		logger.Info().Field("ip", host).Field("remaining_connections", sm.ipConnections[host]).Msg("[Mail] Connection closed")
+		logger.Info().Field("ip", host).Field("remaining_connections", sm.ipConnections[host]).Msg("connection closed")
 	}
 }
 
