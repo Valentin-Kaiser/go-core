@@ -3,6 +3,7 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Valentin-Kaiser/go-core/flag"
 	"github.com/Valentin-Kaiser/go-core/logging"
@@ -151,6 +152,7 @@ func logMiddleware(next http.Handler) http.Handler {
 			logging.F("user-agent", r.UserAgent()),
 			logging.F("referer", r.Referer()),
 			logging.F("status", fmt.Sprintf("%d %s", rw.status, http.StatusText(rw.status))),
+			logging.F("duration", time.Since(rw.start).String()),
 		}
 
 		var event logging.Event
