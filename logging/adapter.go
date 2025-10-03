@@ -8,14 +8,14 @@ import (
 type Level int
 
 const (
-	TraceLevel Level = iota
-	DebugLevel
-	InfoLevel
-	WarnLevel
-	ErrorLevel
-	FatalLevel
-	PanicLevel
-	DisabledLevel
+	TraceLevel    Level = -1
+	DebugLevel    Level = 0
+	InfoLevel     Level = 1
+	WarnLevel     Level = 2
+	ErrorLevel    Level = 3
+	FatalLevel    Level = 4
+	PanicLevel    Level = 5
+	DisabledLevel Level = 6
 )
 
 // String returns the string representation of the log level
