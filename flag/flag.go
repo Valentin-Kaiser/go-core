@@ -39,6 +39,7 @@ package flag
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 
 	"github.com/spf13/pflag"
@@ -69,7 +70,7 @@ func Init() {
 
 	if Help {
 		Print()
-		return
+		os.Exit(0)
 	}
 }
 
