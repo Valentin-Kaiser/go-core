@@ -76,6 +76,9 @@ var (
 		}
 		panic(fmt.Sprintf(ErrorFormat, msg, err.Error()))
 	}
+
+	// anonymous controls whether to use anonymous caller tracking
+	anonymous = false
 )
 
 // Error represents an application error with a stack trace and additional errors
@@ -353,32 +356,6 @@ func CatchCustom(f func() error, msg string, handler func(error, string)) {
 	}
 }
 
-// trace generates a stack trace for the error
-// It uses runtime.Caller to get the file name and line number
-func trace(e Error) []string {
-	pc, file, line, ok := runtime.Caller(2)
-	if !ok {
-		return e.Trace
-	}
-
-	if f := runtime.FuncForPC(pc); f != nil {
-		e.Trace = append(e.Trace, fmt.Sprintf("%v+%v", f.Name(), line))
-		return e.Trace
-	}
-
-	e.Trace = append(e.Trace, fmt.Sprintf("%s+%d", file, line))
-	return e.Trace
-}
-
-// getErrors checks if the error is of type Error and returns the additional errors
-// If the error is not of type Error, it returns nil
-func getErrors(err error) []error {
-	if e, ok := err.(Error); ok {
-		return e.Errors
-	}
-	return nil
-}
-
 // Where returns the trace location of the caller at the specified level
 // The level parameter indicates how many stack frames to skip
 func Where(level int) string {
@@ -402,4 +379,39 @@ func Where(level int) string {
 		}
 	}
 	return sb.String()
+}
+
+// Anonymous enables or disables anonymous caller tracking
+// When enabled, the trace will use package name and line number instead of full file path
+// This can help reduce noise in logs while still providing useful context
+func Anonymous(enable bool) {
+	anonymous = enable
+}
+
+// trace generates a stack trace for the error
+// It uses runtime.Caller to get the file name and line number
+func trace(e Error) []string {
+	pc, file, line, ok := runtime.Caller(2)
+	if !ok {
+		return e.Trace
+	}
+
+	if anonymous {
+		if f := runtime.FuncForPC(pc); f != nil {
+			e.Trace = append(e.Trace, fmt.Sprintf("%v:%v", f.Name(), line))
+		}
+		return e.Trace
+	}
+
+	e.Trace = append(e.Trace, fmt.Sprintf("%s:%d", file, line))
+	return e.Trace
+}
+
+// getErrors checks if the error is of type Error and returns the additional errors
+// If the error is not of type Error, it returns nil
+func getErrors(err error) []error {
+	if e, ok := err.(Error); ok {
+		return e.Errors
+	}
+	return nil
 }
