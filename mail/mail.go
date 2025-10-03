@@ -158,6 +158,11 @@ func (m *Manager) Start(_ context.Context) error {
 	}
 
 	if m.config.Queue.Enabled && m.queueManager != nil {
+		err := m.queueManager.Start(m.ctx)
+		if err != nil {
+			atomic.StoreInt32(&m.running, 0)
+			return apperror.Wrap(err)
+		}
 		m.queueManager.RegisterHandler("mail", m.handleMailJob)
 	}
 
@@ -186,6 +191,12 @@ func (m *Manager) Stop(ctx context.Context) error {
 	if m.server != nil && m.server.IsRunning() {
 		if err := m.server.Stop(ctx); err != nil {
 			logger.Error().Err(err).Msg("failed to stop SMTP server")
+		}
+	}
+
+	if m.config.Queue.Enabled && m.queueManager != nil {
+		if err := m.queueManager.Stop(); err != nil {
+			logger.Error().Err(err).Msg("failed to stop queue manager")
 		}
 	}
 

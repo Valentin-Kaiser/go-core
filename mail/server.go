@@ -82,7 +82,7 @@ type Session interface {
 
 // Conn represents an SMTP connection
 type Conn struct {
-	conn          net.Conn
+	net.Conn
 	scanner       *bufio.Scanner
 	writer        *bufio.Writer
 	hostname      string
@@ -95,15 +95,10 @@ type Conn struct {
 // NewConn creates a new SMTP connection wrapper
 func NewConn(conn net.Conn) *Conn {
 	return &Conn{
-		conn:    conn,
+		Conn:    conn,
 		scanner: bufio.NewScanner(conn),
 		writer:  bufio.NewWriter(conn),
 	}
-}
-
-// Conn returns the underlying network connection
-func (c *Conn) Conn() net.Conn {
-	return c.conn
 }
 
 // Hostname returns the hostname provided by the client in HELO/EHLO
@@ -473,7 +468,7 @@ type backend struct {
 
 // NewSession creates a new SMTP session
 func (b *backend) NewSession(conn *Conn) (Session, error) {
-	remoteAddr := conn.Conn().RemoteAddr().String()
+	remoteAddr := conn.RemoteAddr().String()
 
 	logger.Trace().
 		Field("remote_addr", remoteAddr).
@@ -777,7 +772,7 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 
 // NewSession creates a new SMTP session (implements Backend interface)
 func (s *smtpServer) NewSession(conn *Conn) (Session, error) {
-	remoteAddr := conn.Conn().RemoteAddr().String()
+	remoteAddr := conn.RemoteAddr().String()
 
 	logger.Trace().
 		Field("remote_addr", remoteAddr).
@@ -804,12 +799,12 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 	for {
 		// Update read deadline
 		if s.config.ReadTimeout > 0 {
-			if err := conn.conn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
+			if err := conn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
 				if isConnectionClosed(err) {
-					logger.Debug().Err(err).Msg("connection closed while updating read deadline")
+					logger.Debug().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection closed while updating read deadline")
 					return
 				}
-				logger.Error().Err(err).Msg("Failed to update read deadline")
+				logger.Error().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("failed to update read deadline")
 				return
 			}
 		}
@@ -818,10 +813,10 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 			if err := conn.scanner.Err(); err != nil {
 				// Check if this is a normal connection close/reset
 				if isConnectionClosed(err) {
-					logger.Debug().Err(err).Msg("client disconnected")
+					logger.Debug().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection closed")
 					return
 				}
-				logger.Error().Err(err).Msg("connection read error")
+				logger.Error().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection read error")
 			}
 			return
 		}
@@ -831,7 +826,7 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 			continue
 		}
 
-		logger.Trace().Field("command", line).Msg("Received SMTP command")
+		logger.Trace().Field("command", line).Field("remote_addr", conn.RemoteAddr()).Msg("received SMTP command")
 
 		parts := strings.SplitN(line, " ", 2)
 		command := strings.ToUpper(parts[0])
@@ -893,7 +888,7 @@ func (s *smtpServer) writeMultiResponse(conn *Conn, code int, messages []string)
 // writeRaw writes raw data to the connection
 func (s *smtpServer) writeRaw(conn *Conn, data string) {
 	if s.config.WriteTimeout > 0 {
-		if err := conn.conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
+		if err := conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
 			if isConnectionClosed(err) {
 				logger.Debug().Err(err).Msg("Connection closed while setting write deadline")
 				return
@@ -991,14 +986,14 @@ func (s *smtpServer) handleStartTLS(conn *Conn) bool {
 	s.writeResponse(conn, StatusReady, "Ready to start TLS")
 
 	// Upgrade connection to TLS
-	tlsConn := tls.Server(conn.conn, tlsConfig)
+	tlsConn := tls.Server(conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		logger.Error().Err(err).Msg("TLS handshake failed")
 		return false
 	}
 
 	conn.mutex.Lock()
-	conn.conn = tlsConn
+	conn.Conn = tlsConn
 	conn.scanner = bufio.NewScanner(tlsConn)
 	conn.writer = bufio.NewWriter(tlsConn)
 	conn.tls = true
