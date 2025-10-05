@@ -13,6 +13,7 @@ import (
 // RedisCache implements a Redis-backed cache
 type RedisCache struct {
 	*BaseCache
+
 	client *redis.Client
 }
 

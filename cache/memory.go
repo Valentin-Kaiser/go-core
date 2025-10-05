@@ -13,6 +13,7 @@ import (
 // MemoryCache implements an in-memory cache with LRU eviction support
 type MemoryCache struct {
 	*BaseCache
+
 	items     map[string]*list.Element
 	lruList   *list.List
 	mutex     sync.RWMutex

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -226,7 +227,7 @@ func (s *smtpSender) sendEmail(_ context.Context, emailMsg *email.Email) error {
 	}
 
 	// Get server address
-	addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
+	addr := net.JoinHostPort(s.config.Host, strconv.Itoa(s.config.Port))
 
 	// Send based on encryption method
 	switch strings.ToUpper(s.config.Encryption) {

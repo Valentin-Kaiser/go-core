@@ -162,12 +162,15 @@ func Read() error {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(flag.Path)
 
-	if err := viper.ReadInConfig(); err != nil {
-		if err := os.MkdirAll(flag.Path, 0750); err != nil {
+	err := viper.ReadInConfig()
+	if err != nil {
+		err := os.MkdirAll(flag.Path, 0750)
+		if err != nil {
 			return apperror.NewError("creating configuration directory failed").AddError(err)
 		}
 		// Write the default config using our own save function instead of viper's SafeWriteConfig
-		if err := save(); err != nil {
+		err = save()
+		if err != nil {
 			return apperror.NewError("writing default configuration file failed").AddError(err)
 		}
 	}
@@ -177,7 +180,7 @@ func Read() error {
 		return apperror.NewErrorf("creating new instance of %T failed", config)
 	}
 
-	err := viper.Unmarshal(&change)
+	err = viper.Unmarshal(&change)
 	if err != nil {
 		return apperror.NewErrorf("unmarshalling configuration data in %T failed", config).AddError(err)
 	}
@@ -233,7 +236,7 @@ func Write(change Config) error {
 // This is to prevent multiple calls when the file is saved
 func Watch() {
 	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
+	viper.OnConfigChange(func(_ fsnotify.Event) {
 		if time.Now().UnixMilli()-lastChange.Load() < 1000 {
 			return
 		}

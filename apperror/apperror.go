@@ -334,7 +334,8 @@ func HandleCustom(err error, msg string, handler func(error, string)) {
 // defer apperror.Catch(funcWithError(), "an error occurred")
 func Catch(f func() error, msg string) {
 	if ErrorHandler != nil {
-		if err := f(); err != nil {
+		err := f()
+		if err != nil {
 			ErrorHandler(err, msg)
 		}
 	}
@@ -344,13 +345,15 @@ func Catch(f func() error, msg string) {
 // It takes a function that returns an error, a message, and a custom handler.
 func CatchCustom(f func() error, msg string, handler func(error, string)) {
 	if handler != nil {
-		if err := f(); err != nil {
+		err := f()
+		if err != nil {
 			handler(err, msg)
 			return
 		}
 	}
 	if ErrorHandler != nil {
-		if err := f(); err != nil {
+		err := f()
+		if err != nil {
 			ErrorHandler(err, msg)
 		}
 	}

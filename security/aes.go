@@ -79,7 +79,8 @@ func (a *AesCipher) Encrypt(plaintext string, out io.Writer) *AesCipher {
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+	_, err = io.ReadFull(rand.Reader, nonce)
+	if err != nil {
 		a.Error = apperror.NewError("failed to read nonce").AddError(err)
 		return a
 	}

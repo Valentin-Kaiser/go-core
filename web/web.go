@@ -64,6 +64,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -181,7 +182,7 @@ func (s *Server) Start() *Server {
 		g.Go(func() error {
 			s.mutex.Lock()
 			s.server.TLSConfig = s.tlsConfig
-			s.server.Addr = net.JoinHostPort(s.host, fmt.Sprintf("%d", s.port))
+			s.server.Addr = net.JoinHostPort(s.host, strconv.FormatUint(uint64(s.port), 10))
 			server := s.server
 			s.mutex.Unlock()
 
@@ -203,7 +204,7 @@ func (s *Server) Start() *Server {
 	logger.Info().Fields(logging.F("host", s.host), logging.F("port", s.port)).Msg("listening on http")
 
 	s.mutex.Lock()
-	s.server.Addr = net.JoinHostPort(s.host, fmt.Sprintf("%d", s.port))
+	s.server.Addr = net.JoinHostPort(s.host, strconv.FormatUint(uint64(s.port), 10))
 	s.mutex.Unlock()
 
 	// Get a reference to the server while holding the lock
@@ -577,7 +578,7 @@ func (s *Server) WithRedirectToHTTPS(port uint16) *Server {
 	}
 
 	s.redirect = &http.Server{
-		Addr: net.JoinHostPort(s.host, fmt.Sprintf("%d", port)),
+		Addr: net.JoinHostPort(s.host, strconv.FormatUint(uint64(port), 10)),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h, _, err := net.SplitHostPort(r.Host)
 			if err != nil {

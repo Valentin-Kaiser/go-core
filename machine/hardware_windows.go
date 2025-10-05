@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/Valentin-Kaiser/go-core/apperror"
 )
 
 // collectHardwareIdentifiersWithOptions gathers Windows-specific hardware identifiers based on generator config
 func collectHardwareIdentifiersWithOptions(g *generator) ([]string, error) {
 	if g == nil {
-		return nil, fmt.Errorf("generator cannot be nil")
+		return nil, apperror.NewError("generator cannot be nil")
 	}
 
 	var collectors []func() []string
@@ -80,8 +82,7 @@ func parseWmicValue(output, prefix string) (string, error) {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, prefix):
+		if strings.HasPrefix(line, prefix) {
 			value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 			switch value {
 			case "", "To be filled by O.E.M.":
@@ -100,8 +101,7 @@ func parseWmicMultipleValues(output, prefix string) []string {
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, prefix):
+		if strings.HasPrefix(line, prefix) {
 			value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 			switch value {
 			case "", "To be filled by O.E.M.":

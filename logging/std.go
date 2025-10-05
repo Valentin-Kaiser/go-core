@@ -92,7 +92,7 @@ func (e *StandardEvent) formatMessage(msg string) string {
 	parts = append(parts, fmt.Sprintf("[%s]", strings.ToUpper(e.level.String())))
 
 	if e.caller != "" {
-		parts = append(parts, fmt.Sprintf("%s > ", e.caller))
+		parts = append(parts, e.caller+" > ")
 	}
 
 	// Add the main message
@@ -100,17 +100,17 @@ func (e *StandardEvent) formatMessage(msg string) string {
 
 	// Add package name if set
 	if e.adapter.pkg != "" {
-		parts = append(parts, fmt.Sprintf("pkg=%s", e.adapter.pkg))
+		parts = append(parts, "pkg="+e.adapter.pkg)
 	}
 
 	// Add fields
 	for _, field := range e.fields {
-		parts = append(parts, fmt.Sprintf("%s=%v", field.Key, field.Value))
+		parts = append(parts, field.Key+"="+fmt.Sprintf("%v", field.Value))
 	}
 
 	// Add error if present
 	if e.err != nil {
-		parts = append(parts, fmt.Sprintf("error=%v", e.err))
+		parts = append(parts, "error="+fmt.Sprintf("%v", e.err))
 	}
 
 	return strings.Join(parts, " ")

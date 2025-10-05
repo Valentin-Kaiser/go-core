@@ -78,6 +78,7 @@ func (n *NoOpAdapter) Panic() Event {
 	return &NoOpEvent{}
 }
 
+// Printf does nothing
 func (n *NoOpAdapter) Printf(_ string, _ ...interface{}) {}
 
 // WithPackage returns the same no-op adapter

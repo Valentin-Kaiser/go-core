@@ -33,7 +33,8 @@ func LoadCertAndConfig(certFile, keyFile, caFile string, clientAuth tls.ClientAu
 		return nil, apperror.Wrap(err)
 	}
 
-	if err := ValidateCertificate(cert); err != nil {
+	err = ValidateCertificate(cert)
+	if err != nil {
 		return nil, apperror.Wrap(err)
 	}
 

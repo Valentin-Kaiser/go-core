@@ -136,7 +136,12 @@ func EnablePackage(pkg string) {
 // If the package doesn't have a specific adapter, this creates one based on the global adapter
 func SetPackageLevel(pkg string, level Level) {
 	if adapter, ok := packages.Load(pkg); ok {
-		adapter.(Adapter).SetLevel(level)
+		a, ok := adapter.(Adapter)
+		if !ok {
+			return
+		}
+
+		a.SetLevel(level)
 		return
 	}
 
@@ -177,7 +182,11 @@ func ListPackages() []string {
 // current returns the current adapter for this package
 func (d *DynamicAdapter) current() Adapter {
 	if adapter, ok := packages.Load(d.pkg); ok {
-		return adapter.(Adapter)
+		a, ok := adapter.(Adapter)
+		if !ok {
+			return global
+		}
+		return a
 	}
 
 	mu.RLock()

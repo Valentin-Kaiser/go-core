@@ -1,3 +1,18 @@
+// Package logging provides a flexible and extensible logging framework with support
+// for multiple adapters and log levels. It offers a structured approach to logging
+// with configurable output destinations and severity levels.
+//
+// The package supports various logging adapters including standard library logger,
+// zerolog, and no-op implementations. It provides a global logger registry for
+// convenient access across applications and supports hierarchical log levels
+// from trace to fatal.
+//
+// Example usage:
+//
+//	import "github.com/Valentin-Kaiser/go-core/logging"
+//
+//	logger := logging.GetGlobalAdapter()
+//	logger.Info().Str("key", "value").Msg("Application started")
 package logging
 
 // Level represents log levels

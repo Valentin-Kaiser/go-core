@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -202,7 +203,7 @@ func (s *smtpServer) Start(_ context.Context) error {
 			time.Sleep(10 * time.Millisecond)
 
 			// Try to connect to the server
-			addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
+			addr := net.JoinHostPort(s.config.Host, strconv.Itoa(s.config.Port))
 			conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
 			if err == nil {
 				apperror.Catch(conn.Close, "failed to close connection")
@@ -631,7 +632,7 @@ func (s *session) Logout() error {
 
 // ListenAndServe starts the server on the configured address
 func (s *smtpServer) ListenAndServe() error {
-	addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
+	addr := net.JoinHostPort(s.config.Host, strconv.Itoa(s.config.Port))
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
@@ -641,7 +642,7 @@ func (s *smtpServer) ListenAndServe() error {
 
 // ListenAndServeTLS starts the server with TLS on the configured address
 func (s *smtpServer) ListenAndServeTLS() error {
-	addr := net.JoinHostPort(s.config.Host, fmt.Sprintf("%d", s.config.Port))
+	addr := net.JoinHostPort(s.config.Host, strconv.Itoa(s.config.Port))
 	tlsConfig, err := s.loadTLSConfig()
 	if err != nil {
 		return err
@@ -725,10 +726,10 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 		s.writeResponse(conn, StatusPermFailure, "connection rejected")
 		return
 	}
-	defer session.Logout()
+	defer apperror.Catch(session.Logout, "failed to logout session")
 
 	// Send greeting
-	greeting := fmt.Sprintf("%s ESMTP Service Ready", s.config.Domain)
+	greeting := s.config.Domain + " ESMTP Service Ready"
 	if s.config.Domain == "" {
 		greeting = "ESMTP Service Ready"
 	}
@@ -863,8 +864,24 @@ func (s *smtpServer) writeRaw(conn *Conn, data string) {
 		}
 	}
 
-	conn.writer.WriteString(data)
-	conn.writer.Flush()
+	_, err := conn.writer.WriteString(data)
+	if err != nil {
+		if isConnectionClosed(err) {
+			logger.Trace().Err(err).Msg("connection closed while writing response")
+			return
+		}
+		logger.Error().Err(err).Msg("failed to write SMTP response")
+		return
+	}
+	err = conn.writer.Flush()
+	if err != nil {
+		if isConnectionClosed(err) {
+			logger.Trace().Err(err).Msg("connection closed while flushing response")
+			return
+		}
+		logger.Error().Err(err).Msg("failed to flush SMTP response")
+		return
+	}
 
 	logger.Trace().Field("response", strings.TrimSpace(data)).Msg("sent SMTP response")
 }
@@ -1013,11 +1030,12 @@ func (s *smtpServer) handleAuthPlain(conn *Conn, session Session, parts []string
 	}
 
 	if err := session.AuthPlain(username, password); err != nil {
-		if errors.Is(err, ErrAuthFailed) {
+		switch {
+		case errors.Is(err, ErrAuthFailed):
 			s.writeResponse(conn, StatusAuthFailed, "Authentication failed")
-		} else if errors.Is(err, ErrAuthUnsupported) {
+		case errors.Is(err, ErrAuthUnsupported):
 			s.writeResponse(conn, StatusNotImplemented, "Authentication method not supported")
-		} else {
+		default:
 			s.writeResponse(conn, StatusTempFailure, "Authentication error")
 		}
 		return
@@ -1035,13 +1053,13 @@ func (s *smtpServer) decodePlainAuth(data string) ([]string, error) {
 	// Base64 decode the authentication data
 	decoded, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
-		return nil, fmt.Errorf("invalid base64 encoding: %w", err)
+		return nil, apperror.NewError("failed to decode base64").AddError(err)
 	}
 
 	// Format: \0username\0password
 	parts := strings.Split(string(decoded), "\x00")
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid plain auth format")
+		return nil, apperror.NewError("invalid plain auth format")
 	}
 	return []string{parts[1], parts[2]}, nil
 }

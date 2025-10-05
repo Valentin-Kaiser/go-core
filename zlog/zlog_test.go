@@ -464,7 +464,8 @@ func BenchmarkLoggerWrite(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := logger.Write(message); err != nil {
+		_, err := logger.Write(message)
+		if err != nil {
 			b.Logf("Failed to write log: %v", err)
 		}
 	}

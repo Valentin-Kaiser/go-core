@@ -40,9 +40,10 @@ package machine
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/Valentin-Kaiser/go-core/apperror"
 )
 
 type generator struct {
@@ -105,20 +106,20 @@ func (g *generator) VMFriendly() *generator {
 	return g
 }
 
-// GetID generates a machine ID using the specified options
+// ID generates a machine ID using the specified options
 func (g *generator) ID() (string, error) {
 	identifiers, err := collectHardwareIdentifiersWithOptions(g)
 	switch {
 	case err != nil:
-		return "", fmt.Errorf("failed to collect hardware identifiers: %w", err)
+		return "", apperror.NewError("failed to collect hardware identifiers").AddError(err)
 	case len(identifiers) == 0:
-		return "", fmt.Errorf("no hardware identifiers found with current configuration")
+		return "", apperror.NewError("no hardware identifiers found with current configuration")
 	default:
 		return hashIdentifiers(identifiers, g.salt), nil
 	}
 }
 
-// ValidateID checks if the provided ID matches the current machine ID using the specified options
+// Validate checks if the provided ID matches the current machine ID using the specified options
 func (g *generator) Validate(id string) (bool, error) {
 	currentID, err := g.ID()
 	switch err {

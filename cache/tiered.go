@@ -10,6 +10,7 @@ import (
 // TieredCache implements a multi-tier cache system (e.g., L1: Memory, L2: Redis)
 type TieredCache struct {
 	*BaseCache
+
 	l1Cache Cache // Fast cache (e.g., memory)
 	l2Cache Cache // Slower but larger cache (e.g., Redis)
 }
