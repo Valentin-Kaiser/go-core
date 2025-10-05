@@ -1,3 +1,6 @@
+// Package log provides a convenient global logger interface that wraps
+// the core logging functionality. It offers simplified access to logging
+// operations without requiring explicit logger instantiation.
 package log
 
 import (
