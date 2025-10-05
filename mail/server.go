@@ -451,9 +451,6 @@ func (s *smtpServer) startWorkerPool() {
 							Msg("notification handler failed")
 					}
 				case <-s.ctx.Done():
-					logger.Trace().
-						Field("worker_id", workerID).
-						Msg("notification handler worker stopping")
 					return
 				}
 			}
