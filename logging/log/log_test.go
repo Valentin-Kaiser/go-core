@@ -9,6 +9,7 @@ import (
 )
 
 func TestLoggerSingleton(t *testing.T) {
+	logging.SetGlobalAdapter(logging.NewStandardAdapter())
 	// Test basic logging functions exist and can be called
 	t.Run("basic logging functions", func(t *testing.T) {
 		// These should not panic

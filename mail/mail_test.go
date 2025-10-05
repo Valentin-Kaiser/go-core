@@ -370,17 +370,13 @@ func TestManagerSendAsync(t *testing.T) {
 
 	queueManager := queue.NewManager()
 
-	// Start queue manager first
-	err := queueManager.Start(context.Background())
-	if err != nil {
-		t.Fatalf("Failed to start queue manager: %v", err)
-	}
-	defer queueManager.Stop()
-
 	manager := mail.NewManager(config, queueManager)
 
-	// Start manager
-	_ = manager.Start(context.Background())
+	// Start manager (this will automatically start the queue manager)
+	err := manager.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to start mail manager: %v", err)
+	}
 	defer manager.Stop(context.Background())
 
 	message, _ := mail.NewMessage().
