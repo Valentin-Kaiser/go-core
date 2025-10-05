@@ -46,16 +46,30 @@ func DefaultRedisConfig() RedisConfig {
 	}
 }
 
+// Changed checks if the Redis configuration has changed compared to another configuration.
 func (rc *RedisConfig) Changed(n *RedisConfig) bool {
 	return config.Changed(rc, n)
 }
 
-// NewRedisCache creates a new Redis-backed cache
+// NewRedisCache creates a new Redis-backed cache with default cache configuration.
+// It establishes a new Redis client connection using the provided Redis configuration
+// and applies default cache settings (LRU eviction, 1 hour TTL, etc.).
+//
+// Example usage:
+//
+//	config := cache.RedisConfig{
+//		Addr:     "localhost:6379",
+//		Password: "",
+//		DB:       0,
+//	}
+//	cache := cache.NewRedisCache(config)
 func NewRedisCache(config RedisConfig) *RedisCache {
 	return NewRedisCacheWithCacheConfig(config, DefaultConfig())
 }
 
-// NewRedisCacheWithClient creates a new Redis-backed cache with an existing Redis client
+// NewRedisCacheWithClient creates a new Redis-backed cache using an existing Redis client.
+// This is useful when you want to share a Redis client across multiple cache instances
+// or when you need custom Redis client configuration that's not supported by RedisConfig.
 func NewRedisCacheWithClient(client *redis.Client) *RedisCache {
 	return &RedisCache{
 		BaseCache: NewBaseCache(DefaultConfig()),
@@ -63,7 +77,9 @@ func NewRedisCacheWithClient(client *redis.Client) *RedisCache {
 	}
 }
 
-// NewRedisCacheWithConfig creates a new Redis-backed cache with an existing Redis client and cache config
+// NewRedisCacheWithConfig creates a new Redis-backed cache with an existing Redis client
+// and custom cache configuration. This allows fine-tuning of cache behavior while reusing
+// an existing Redis connection.
 func NewRedisCacheWithConfig(client *redis.Client, config Config) *RedisCache {
 	return &RedisCache{
 		BaseCache: NewBaseCache(config),
@@ -71,7 +87,9 @@ func NewRedisCacheWithConfig(client *redis.Client, config Config) *RedisCache {
 	}
 }
 
-// NewRedisCacheWithCacheConfig creates a new Redis-backed cache with custom cache configuration
+// NewRedisCacheWithCacheConfig creates a new Redis-backed cache with both custom Redis
+// connection settings and cache configuration. This provides the most flexibility for
+// configuring both the Redis client and cache behavior.
 func NewRedisCacheWithCacheConfig(redisConfig RedisConfig, cacheConfig Config) *RedisCache {
 	client := redis.NewClient(&redis.Options{
 		Addr:         redisConfig.Addr,

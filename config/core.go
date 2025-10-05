@@ -422,6 +422,9 @@ func Reset() {
 	viper.Reset()
 }
 
+// Changed checks if two configuration values are different by comparing their reflection values.
+// It returns true if the configurations differ, false if they are the same.
+// This function handles nil values correctly and performs deep comparison of the underlying values.
 func Changed(o, n any) bool {
 	if o == nil && n == nil {
 		return false

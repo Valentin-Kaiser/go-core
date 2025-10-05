@@ -308,22 +308,27 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// Changed checks if the mail configuration has changed compared to another configuration.
 func (c *Config) Changed(n *Config) bool {
 	return config.Changed(c, n)
 }
 
+// Changed checks if the client configuration has changed compared to another configuration.
 func (c *ClientConfig) Changed(n *ClientConfig) bool {
 	return config.Changed(c, n)
 }
 
+// Changed checks if the server configuration has changed compared to another configuration.
 func (c *ServerConfig) Changed(n *ServerConfig) bool {
 	return config.Changed(c, n)
 }
 
+// Changed checks if the queue configuration has changed compared to another configuration.
 func (c *QueueConfig) Changed(n *QueueConfig) bool {
 	return config.Changed(c, n)
 }
 
+// Changed checks if the template configuration has changed compared to another configuration.
 func (c *TemplateConfig) Changed(n *TemplateConfig) bool {
 	return config.Changed(c, n)
 }

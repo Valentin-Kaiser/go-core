@@ -114,12 +114,12 @@ func init() {
 	}
 }
 
-// VersionFormat represents the type of version format
-type VersionFormat int
+// Format represents the type of version format
+type Format int
 
 const (
 	// FormatUnknown represents an unknown or unsupported version format
-	FormatUnknown VersionFormat = iota
+	FormatUnknown Format = iota
 	// FormatSemVer represents semantic versioning (vX.Y.Z)
 	FormatSemVer
 	// FormatCalVerYYYYMMDD represents calendar versioning YYYY.MM.DD
@@ -133,7 +133,7 @@ const (
 )
 
 // String returns the string representation of the version format
-func (f VersionFormat) String() string {
+func (f Format) String() string {
 	switch f {
 	case FormatSemVer:
 		return "semantic"
@@ -150,14 +150,14 @@ func (f VersionFormat) String() string {
 	}
 }
 
-// VersionParser defines the interface for parsing and validating version strings
-type VersionParser interface {
+// Parser defines the interface for parsing and validating version strings
+type Parser interface {
 	// Parse extracts version components from a version string
 	Parse(tag string) (*ParsedVersion, error)
 	// IsValid checks if a version string is valid for this format
 	IsValid(tag string) bool
 	// Format returns the version format type
-	Format() VersionFormat
+	Format() Format
 	// Compare compares two version strings, returns -1, 0, or 1
 	Compare(tag1, tag2 string) (int, error)
 }
@@ -165,7 +165,7 @@ type VersionParser interface {
 // ParsedVersion represents the parsed components of a version string
 type ParsedVersion struct {
 	Original string                 `json:"original"`
-	Format   VersionFormat          `json:"format"`
+	Format   Format                 `json:"format"`
 	Major    int                    `json:"major,omitempty"`
 	Minor    int                    `json:"minor,omitempty"`
 	Patch    int                    `json:"patch,omitempty"`
@@ -194,7 +194,7 @@ type Release struct {
 	GoVersion     string         `json:"goVersion" gorm:"uniqueIndex:idx_version_module"`
 	Platform      string         `json:"platform" gorm:"uniqueIndex:idx_version_module"`
 	Modules       []*Module      `json:"modules" gorm:"-"`
-	VersionFormat VersionFormat  `json:"versionFormat" gorm:"-"`
+	VersionFormat Format         `json:"versionFormat" gorm:"-"`
 	ParsedVersion *ParsedVersion `json:"parsedVersion" gorm:"-"`
 }
 
@@ -421,7 +421,7 @@ func GetVersionComponents(tag string) (map[string]interface{}, error) {
 }
 
 // DetectFormat automatically detects the version format from a tag string
-func DetectFormat(tag string) VersionFormat {
+func DetectFormat(tag string) Format {
 	if IsCalVerYYYYMMDDMICRO(tag) {
 		return FormatCalVerYYYYMMDDMICRO
 	}
@@ -441,7 +441,7 @@ func DetectFormat(tag string) VersionFormat {
 }
 
 // GetParser returns the appropriate parser for the given format
-func GetParser(format VersionFormat) VersionParser {
+func GetParser(format Format) Parser {
 	switch format {
 	case FormatSemVer:
 		return &SemVerParser{}
@@ -532,6 +532,7 @@ func IsCalVerYYYYMMDDMICRO(tag string) bool {
 // SemVerParser implements VersionParser for semantic versioning
 type SemVerParser struct{}
 
+// Parse parses a semantic version tag and returns a ParsedVersion struct with major, minor, and patch components.
 func (p *SemVerParser) Parse(tag string) (*ParsedVersion, error) {
 	if !p.IsValid(tag) {
 		return nil, apperror.NewError("invalid semantic version format")
@@ -548,14 +549,17 @@ func (p *SemVerParser) Parse(tag string) (*ParsedVersion, error) {
 	return pv, nil
 }
 
+// IsValid checks if the given tag is a valid semantic version format.
 func (p *SemVerParser) IsValid(tag string) bool {
 	return IsSemver(tag)
 }
 
-func (p *SemVerParser) Format() VersionFormat {
+// Format returns the version format type handled by this parser.
+func (p *SemVerParser) Format() Format {
 	return FormatSemVer
 }
 
+// Compare compares two semantic version tags and returns -1, 0, or 1.
 func (p *SemVerParser) Compare(tag1, tag2 string) (int, error) {
 	pv1, err := p.Parse(tag1)
 	if err != nil {
@@ -593,6 +597,7 @@ func (p *SemVerParser) Compare(tag1, tag2 string) (int, error) {
 // CalVerYYYYMMDDParser implements VersionParser for YYYY.MM.DD CalVer format
 type CalVerYYYYMMDDParser struct{}
 
+// Parse parses a YYYY.MM.DD calendar version tag and returns a ParsedVersion struct with year, month, and day components.
 func (p *CalVerYYYYMMDDParser) Parse(tag string) (*ParsedVersion, error) {
 	if !p.IsValid(tag) {
 		return nil, apperror.NewError("invalid YYYY.MM.DD CalVer format")
@@ -618,14 +623,17 @@ func (p *CalVerYYYYMMDDParser) Parse(tag string) (*ParsedVersion, error) {
 	return pv, nil
 }
 
+// IsValid checks if the given tag is a valid YYYY.MM.DD calendar version format.
 func (p *CalVerYYYYMMDDParser) IsValid(tag string) bool {
 	return IsCalVerYYYYMMDD(tag)
 }
 
-func (p *CalVerYYYYMMDDParser) Format() VersionFormat {
+// Format returns the version format type handled by this parser.
+func (p *CalVerYYYYMMDDParser) Format() Format {
 	return FormatCalVerYYYYMMDD
 }
 
+// Compare compares two YYYY.MM.DD calendar version tags and returns -1, 0, or 1.
 func (p *CalVerYYYYMMDDParser) Compare(tag1, tag2 string) (int, error) {
 	pv1, err := p.Parse(tag1)
 	if err != nil {
@@ -663,6 +671,7 @@ func (p *CalVerYYYYMMDDParser) Compare(tag1, tag2 string) (int, error) {
 // CalVerYYMMMICROParser implements VersionParser for YY.MM.MICRO CalVer format
 type CalVerYYMMMICROParser struct{}
 
+// Parse parses a YY.MM.MICRO calendar version tag and returns a ParsedVersion struct with year, month, and micro components.
 func (p *CalVerYYMMMICROParser) Parse(tag string) (*ParsedVersion, error) {
 	if !p.IsValid(tag) {
 		return nil, apperror.NewError("invalid YY.MM.MICRO CalVer format")
@@ -688,14 +697,17 @@ func (p *CalVerYYMMMICROParser) Parse(tag string) (*ParsedVersion, error) {
 	return pv, nil
 }
 
+// IsValid checks if the given tag is a valid YY.MM.MICRO calendar version format.
 func (p *CalVerYYMMMICROParser) IsValid(tag string) bool {
 	return IsCalVerYYMMMICRO(tag)
 }
 
-func (p *CalVerYYMMMICROParser) Format() VersionFormat {
+// Format returns the version format type handled by this parser.
+func (p *CalVerYYMMMICROParser) Format() Format {
 	return FormatCalVerYYMMMICRO
 }
 
+// Compare compares two YY.MM.MICRO calendar version tags and returns -1, 0, or 1.
 func (p *CalVerYYMMMICROParser) Compare(tag1, tag2 string) (int, error) {
 	pv1, err := p.Parse(tag1)
 	if err != nil {
@@ -733,6 +745,7 @@ func (p *CalVerYYMMMICROParser) Compare(tag1, tag2 string) (int, error) {
 // CalVerYYYYWWParser implements VersionParser for YYYY.WW CalVer format
 type CalVerYYYYWWParser struct{}
 
+// Parse parses a YYYY.WW calendar version tag and returns a ParsedVersion struct with year and week components.
 func (p *CalVerYYYYWWParser) Parse(tag string) (*ParsedVersion, error) {
 	if !p.IsValid(tag) {
 		return nil, apperror.NewError("invalid YYYY.WW CalVer format")
@@ -756,14 +769,17 @@ func (p *CalVerYYYYWWParser) Parse(tag string) (*ParsedVersion, error) {
 	return pv, nil
 }
 
+// IsValid checks if the given tag is a valid YYYY.WW calendar version format.
 func (p *CalVerYYYYWWParser) IsValid(tag string) bool {
 	return IsCalVerYYYYWW(tag)
 }
 
-func (p *CalVerYYYYWWParser) Format() VersionFormat {
+// Format returns the version format type handled by this parser.
+func (p *CalVerYYYYWWParser) Format() Format {
 	return FormatCalVerYYYYWW
 }
 
+// Compare compares two YYYY.WW calendar version tags and returns -1, 0, or 1.
 func (p *CalVerYYYYWWParser) Compare(tag1, tag2 string) (int, error) {
 	pv1, err := p.Parse(tag1)
 	if err != nil {
@@ -794,6 +810,7 @@ func (p *CalVerYYYYWWParser) Compare(tag1, tag2 string) (int, error) {
 // CalVerYYYYMMDDMICROParser implements VersionParser for YYYY.MM.DD.MICRO CalVer format
 type CalVerYYYYMMDDMICROParser struct{}
 
+// Parse parses a YYYY.MM.DD.MICRO calendar version tag and returns a ParsedVersion struct with year, month, day, and micro components.
 func (p *CalVerYYYYMMDDMICROParser) Parse(tag string) (*ParsedVersion, error) {
 	if !p.IsValid(tag) {
 		return nil, apperror.NewError("invalid YYYY.MM.DD.MICRO CalVer format")
@@ -821,14 +838,17 @@ func (p *CalVerYYYYMMDDMICROParser) Parse(tag string) (*ParsedVersion, error) {
 	return pv, nil
 }
 
+// IsValid checks if the given tag is a valid YYYY.MM.DD.MICRO calendar version format.
 func (p *CalVerYYYYMMDDMICROParser) IsValid(tag string) bool {
 	return IsCalVerYYYYMMDDMICRO(tag)
 }
 
-func (p *CalVerYYYYMMDDMICROParser) Format() VersionFormat {
+// Format returns the version format type handled by this parser.
+func (p *CalVerYYYYMMDDMICROParser) Format() Format {
 	return FormatCalVerYYYYMMDDMICRO
 }
 
+// Compare compares two YYYY.MM.DD.MICRO calendar version tags and returns -1, 0, or 1.
 func (p *CalVerYYYYMMDDMICROParser) Compare(tag1, tag2 string) (int, error) {
 	pv1, err := p.Parse(tag1)
 	if err != nil {

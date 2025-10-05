@@ -1,3 +1,4 @@
+// Package service provides a simple way to create and manage system services (daemons) in Go applications.
 package service
 
 import (
@@ -11,10 +12,12 @@ import (
 )
 
 var (
-	interactive bool = false
-	logger           = logging.GetPackageLogger("service")
+	interactive = false
+	logger      = logging.GetPackageLogger("service")
 )
 
+// Config is an alias for service.Config providing system service configuration options.
+// It includes service name, display name, description, dependencies, and platform-specific settings.
 type Config = service.Config
 
 func init() {
@@ -84,6 +87,9 @@ func IsInteractive() bool {
 	return interactive
 }
 
+// Service wraps the kardianos/service.Service interface and provides additional
+// functionality for managing application lifecycle with custom start and stop handlers.
+// It includes error handling and graceful shutdown capabilities.
 type Service struct {
 	service.Service
 	err   chan error
@@ -91,6 +97,8 @@ type Service struct {
 	stop  func(s *Service) error
 }
 
+// Start implements the service.Interface Start method and executes the custom start handler.
+// It is called by the service manager when the service should start.
 func (s *Service) Start(svc service.Service) error {
 	s.Service = svc
 	if s.start == nil {
@@ -102,6 +110,8 @@ func (s *Service) Start(svc service.Service) error {
 	return nil
 }
 
+// Stop implements the service.Interface Stop method and executes the custom stop handler.
+// It is called by the service manager when the service should stop gracefully.
 func (s *Service) Stop(svc service.Service) error {
 	s.Service = svc
 	if s.stop == nil {

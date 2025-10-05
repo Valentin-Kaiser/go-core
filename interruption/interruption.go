@@ -53,8 +53,17 @@ import (
 
 var logger = logging.GetPackageLogger("interruption")
 
-// Catch is a function that handles panics in the application
-// It recovers from the panic and logs the error message along with the stack trace
+// Catch recovers from panics in the application and logs detailed error information.
+// It captures the panic value, caller information, and stack trace for debugging.
+// When debug mode is enabled, it logs the full stack trace; otherwise, it logs only
+// the essential error details to avoid cluttering production logs.
+//
+// This function should be called with defer at the beginning of main() and any goroutines:
+//
+//	func main() {
+//		defer interruption.Catch()
+//		// application logic
+//	}
 func Catch() {
 	if err := recover(); err != nil {
 		caller := "unknown"
@@ -131,6 +140,15 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 //
 //		// Application will wait for signal and graceful shutdown when function exits
 //	}
+//
+// WaitForShutdown blocks until the provided context is cancelled, typically used
+// to wait for graceful shutdown signal handlers to complete their cleanup operations.
+// If the context is nil, the function returns immediately.
+//
+// This function is commonly used in conjunction with OnSignal to implement graceful shutdown:
+//
+//	ctx := interruption.OnSignal(handlers, os.Interrupt, syscall.SIGTERM)
+//	defer interruption.WaitForShutdown(ctx)
 func WaitForShutdown(ctx context.Context) {
 	if ctx == nil {
 		return

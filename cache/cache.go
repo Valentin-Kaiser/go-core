@@ -212,6 +212,7 @@ type Config struct {
 	EventHandler    EventHandler  `json:"-"`
 }
 
+// Changed checks if the cache configuration has changed compared to another configuration.
 func (c *Config) Changed(n *Config) bool {
 	return config.Changed(c, n)
 }

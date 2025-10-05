@@ -281,7 +281,7 @@ func TestVersionValidate(t *testing.T) {
 func TestDetectVersionFormat(t *testing.T) {
 	testCases := []struct {
 		tag      string
-		expected version.VersionFormat
+		expected version.Format
 	}{
 		{"v1.2.3", version.FormatSemVer},
 		{"v2024.10.02", version.FormatCalVerYYYYMMDD},
@@ -302,7 +302,7 @@ func TestDetectVersionFormat(t *testing.T) {
 
 func TestVersionFormatString(t *testing.T) {
 	testCases := []struct {
-		format   version.VersionFormat
+		format   version.Format
 		expected string
 	}{
 		{version.FormatSemVer, "semantic"},

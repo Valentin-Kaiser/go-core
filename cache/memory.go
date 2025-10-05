@@ -26,12 +26,31 @@ type memoryItem struct {
 	dataSize int64
 }
 
-// NewMemoryCache creates a new in-memory cache
+// NewMemoryCache creates a new in-memory cache with default configuration.
+// The default settings include LRU eviction, 1000 item max size, 1 hour default TTL,
+// and 5-minute cleanup intervals. For custom settings, use NewMemoryCacheWithConfig.
+//
+// Example usage:
+//
+//	cache := cache.NewMemoryCache()
+//	err := cache.Set(ctx, "key", "value", time.Hour)
 func NewMemoryCache() *MemoryCache {
 	return NewMemoryCacheWithConfig(DefaultConfig())
 }
 
-// NewMemoryCacheWithConfig creates a new in-memory cache with custom configuration
+// NewMemoryCacheWithConfig creates a new in-memory cache with custom configuration.
+// This allows fine-tuning of cache behavior including size limits, TTL settings,
+// LRU eviction policies, cleanup intervals, and serialization options.
+//
+// Example usage:
+//
+//	config := cache.Config{
+//		MaxSize:         5000,
+//		DefaultTTL:      time.Minute * 30,
+//		CleanupInterval: time.Minute,
+//		EnableLRU:       true,
+//	}
+//	cache := cache.NewMemoryCacheWithConfig(config)
 func NewMemoryCacheWithConfig(config Config) *MemoryCache {
 	mc := &MemoryCache{
 		BaseCache: NewBaseCache(config),

@@ -129,7 +129,23 @@ type Manager struct {
 	wg              sync.WaitGroup
 }
 
-// NewManager creates a new mail manager
+// NewManager creates a new mail manager with the specified configuration and queue manager.
+// The mail manager handles email sending operations, template processing, and integrates
+// with a queue system for asynchronous email delivery. It sets up SMTP senders,
+// template managers, and provides features like retry logic, delivery tracking, and statistics.
+//
+// Example usage:
+//
+//	config := &mail.Config{
+//		Client: mail.ClientConfig{
+//			Host:     "smtp.gmail.com",
+//			Port:     587,
+//			Username: "your-email@gmail.com",
+//			Password: "your-password",
+//		},
+//	}
+//	queueMgr := queue.NewManager()
+//	mailMgr := mail.NewManager(config, queueMgr)
 func NewManager(config *Config, queueManager *queue.Manager) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 

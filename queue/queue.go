@@ -205,7 +205,21 @@ type RetryableError struct {
 	Err error
 }
 
-// NewRetryableError creates a new retryable error
+// NewRetryableError wraps an error to indicate that a job should be retried.
+// When a job handler returns a RetryableError, the job manager will automatically
+// retry the job according to the configured retry policy, instead of marking it as failed.
+//
+// Example usage:
+//
+//	func myJobHandler(job *queue.Job) error {
+//		if err := doSomething(); err != nil {
+//			if isTemporaryError(err) {
+//				return queue.NewRetryableError(err) // Will retry
+//			}
+//			return err // Will fail permanently
+//		}
+//		return nil
+//	}
 func NewRetryableError(err error) *RetryableError {
 	return &RetryableError{Err: err}
 }
