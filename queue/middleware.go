@@ -24,7 +24,7 @@ func LoggingMiddleware(next JobHandler) JobHandler {
 	return func(ctx context.Context, job *Job) error {
 		start := time.Now()
 
-		logger.Info().
+		logger.Debug().
 			Field("job_id", job.ID).
 			Field("job_type", job.Type).
 			Field("priority", job.Priority.String()).
@@ -43,7 +43,7 @@ func LoggingMiddleware(next JobHandler) JobHandler {
 			return err
 		}
 
-		logger.Info().
+		logger.Debug().
 			Field("job_id", job.ID).
 			Field("job_type", job.Type).
 			Field("duration", duration).
@@ -79,7 +79,7 @@ func MetricsMiddleware(next JobHandler) JobHandler {
 	return func(ctx context.Context, job *Job) error {
 		start := time.Now()
 
-		logger.Debug().
+		logger.Trace().
 			Field("job_id", job.ID).
 			Field("job_type", job.Type).
 			Msg("job metrics: started")
@@ -88,7 +88,7 @@ func MetricsMiddleware(next JobHandler) JobHandler {
 		duration := time.Since(start)
 
 		if err != nil {
-			logger.Debug().
+			logger.Trace().
 				Field("job_id", job.ID).
 				Field("job_type", job.Type).
 				Field("duration", duration).
@@ -96,7 +96,7 @@ func MetricsMiddleware(next JobHandler) JobHandler {
 			return err
 		}
 
-		logger.Debug().
+		logger.Trace().
 			Field("job_id", job.ID).
 			Field("job_type", job.Type).
 			Field("duration", duration).

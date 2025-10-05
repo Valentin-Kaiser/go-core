@@ -88,8 +88,6 @@ import (
 	gl "gorm.io/gorm/logger"
 )
 
-var logger = logging.GetPackageLogger("database")
-
 var (
 	db               *gorm.DB
 	dbMutex          sync.RWMutex
@@ -99,6 +97,7 @@ var (
 	done             = make(chan bool)
 	onConnectHandler []func(db *gorm.DB, config Config) error
 	handlerMutex     sync.Mutex
+	logger           = logging.GetPackageLogger("database")
 )
 
 // Execute executes a function with a database connection.
@@ -201,7 +200,7 @@ func Connect(interval time.Duration, config Config) {
 					}
 
 					if failed.Load() {
-						logger.Info().Msg("connection restored")
+						logger.Debug().Msg("connection restored")
 					}
 					failed.Store(false)
 					connected.Store(true)

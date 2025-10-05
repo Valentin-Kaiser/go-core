@@ -296,7 +296,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		return apperror.NewError("manager is already running")
 	}
 
-	logger.Info().
+	logger.Debug().
 		Field("workers", m.workerCount).
 		Field("max_retries", m.maxRetries).
 		Field("retry_delay", m.retryDelay.Milliseconds()).
@@ -424,7 +424,7 @@ func (m *Manager) IsRunning() bool {
 func (m *Manager) worker(ctx context.Context, workerID int) {
 	defer m.workerWg.Done()
 
-	logger.Debug().Field("worker_id", workerID).Msg("worker started")
+	logger.Trace().Field("worker_id", workerID).Msg("worker started")
 
 	atomic.AddInt64(&m.stats.WorkersActive, 1)
 	defer atomic.AddInt64(&m.stats.WorkersActive, -1)
@@ -432,10 +432,10 @@ func (m *Manager) worker(ctx context.Context, workerID int) {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Debug().Field("worker_id", workerID).Msg("worker stopped due to context cancellation")
+			logger.Trace().Field("worker_id", workerID).Msg("worker stopped due to context cancellation")
 			return
 		case <-m.shutdownChan:
-			logger.Debug().Field("worker_id", workerID).Msg("worker stopped due to shutdown signal")
+			logger.Trace().Field("worker_id", workerID).Msg("worker stopped due to shutdown signal")
 			return
 		default:
 			job, err := m.queue.Dequeue(ctx, time.Second*5)
@@ -495,7 +495,7 @@ func (m *Manager) processJob(ctx context.Context, job *Job, workerID int) {
 			}
 			atomic.AddInt64(&m.stats.JobsRetried, 1)
 
-			logger.Info().
+			logger.Debug().
 				Field("job_id", job.ID).
 				Field("job_type", job.Type).
 				Field("retry_delay", m.calculateRetryDelay(job.Attempts).Milliseconds()).

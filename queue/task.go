@@ -199,7 +199,7 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 	task.NextRun = nextRun
 	s.tasks[name] = task
 
-	logger.Info().Fields(
+	logger.Debug().Fields(
 		logging.F("task_name", name),
 		logging.F("cron_spec", cronSpec),
 		logging.F("next_run", nextRun),
@@ -263,7 +263,7 @@ func (s *TaskScheduler) RegisterIntervalTaskWithOptions(name string, interval ti
 
 	s.tasks[name] = task
 
-	logger.Info().Fields(
+	logger.Debug().Fields(
 		logging.F("task_name", name),
 		logging.F("interval", interval),
 		logging.F("next_run", task.NextRun),
@@ -335,7 +335,7 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 			existingTask.Enabled = *options.Enabled
 		}
 
-		logger.Info().
+		logger.Trace().
 			Field("task_name", name).
 			Field("cron_spec", cronSpec).
 			Field("next_run", nextRun).
@@ -386,7 +386,7 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 	task.NextRun = nextRun
 	s.tasks[name] = task
 
-	logger.Info().
+	logger.Debug().
 		Field("task_name", name).
 		Field("cron_spec", cronSpec).
 		Field("next_run", nextRun).
@@ -439,7 +439,7 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 			existingTask.Enabled = *options.Enabled
 		}
 
-		logger.Info().
+		logger.Trace().
 			Field("task_name", name).
 			Field("interval", interval).
 			Field("next_run", existingTask.NextRun).
@@ -485,7 +485,7 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 
 	s.tasks[name] = task
 
-	logger.Info().
+	logger.Debug().
 		Field("task_name", name).
 		Field("interval", interval).
 		Field("next_run", task.NextRun).
@@ -505,7 +505,7 @@ func (s *TaskScheduler) Start(ctx context.Context) error {
 	s.workerWg.Add(1)
 	go s.schedulerLoop(ctx)
 
-	logger.Info().Msg("task scheduler started")
+	logger.Debug().Msg("task scheduler started")
 	return nil
 }
 
@@ -515,7 +515,7 @@ func (s *TaskScheduler) Stop() {
 		return
 	}
 
-	logger.Info().Msg("stopping task scheduler...")
+	logger.Debug().Msg("stopping task scheduler...")
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -523,7 +523,7 @@ func (s *TaskScheduler) Stop() {
 	close(s.shutdownChan)
 	s.workerWg.Wait()
 
-	logger.Info().Msg("task scheduler stopped")
+	logger.Debug().Msg("task scheduler stopped")
 }
 
 // schedulerLoop is the main scheduler loop
@@ -584,7 +584,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		default:
 		}
 
-		logger.Debug().
+		logger.Trace().
 			Field("task_name", task.Name).
 			Field("attempt", attempt+1).
 			Field("max_retries", task.MaxRetries+1).
@@ -609,7 +609,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 			}
 			s.tasksMutex.Unlock()
 
-			logger.Debug().
+			logger.Trace().
 				Field("task_name", task.Name).
 				Field("run_count", task.RunCount).
 				Field("next_run", task.NextRun).
@@ -712,7 +712,7 @@ func (s *TaskScheduler) EnableTask(name string) error {
 	task.Enabled = true
 	task.UpdatedAt = time.Now()
 
-	logger.Info().
+	logger.Debug().
 		Field("task_name", name).
 		Msg("task enabled")
 
@@ -732,7 +732,7 @@ func (s *TaskScheduler) DisableTask(name string) error {
 	task.Enabled = false
 	task.UpdatedAt = time.Now()
 
-	logger.Info().
+	logger.Debug().
 		Field("task_name", name).
 		Msg("task disabled")
 
@@ -755,7 +755,7 @@ func (s *TaskScheduler) RemoveTask(name string) error {
 
 	delete(s.tasks, name)
 
-	logger.Info().
+	logger.Debug().
 		Field("task_name", name).
 		Msg("task removed")
 
@@ -798,7 +798,7 @@ func (s *TaskScheduler) RescheduleTaskWithCron(name, cronSpec string) error {
 	task.NextRun = nextRun
 	task.UpdatedAt = time.Now()
 
-	logger.Info().
+	logger.Trace().
 		Field("task_name", name).
 		Field("cron_spec", cronSpec).
 		Field("next_run", nextRun).
@@ -834,7 +834,7 @@ func (s *TaskScheduler) RescheduleTaskWithInterval(name string, interval time.Du
 	task.NextRun = time.Now().Add(interval)
 	task.UpdatedAt = time.Now()
 
-	logger.Info().
+	logger.Trace().
 		Field("task_name", name).
 		Field("interval", interval).
 		Field("next_run", task.NextRun).

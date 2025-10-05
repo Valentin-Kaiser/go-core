@@ -235,7 +235,6 @@ func Watch() {
 	viper.WatchConfig()
 	viper.OnConfigChange(func(e fsnotify.Event) {
 		if time.Now().UnixMilli()-lastChange.Load() < 1000 {
-			logger.Trace().Msg("ignoring config change event due to rate limiting")
 			return
 		}
 		lastChange.Store(time.Now().UnixMilli())

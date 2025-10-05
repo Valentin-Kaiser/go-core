@@ -166,7 +166,7 @@ func (sm *SecurityManager) ValidateConnection(remoteAddr string) error {
 	sm.ipConnections[ip.String()]++
 
 	if sm.config.LogSecurityEvents {
-		logger.Info().
+		logger.Debug().
 			Field("ip", ip.String()).
 			Field("connections", sm.ipConnections[ip.String()]).
 			Msg("connection accepted")
@@ -219,7 +219,7 @@ func (sm *SecurityManager) ValidateHelo(hostname, remoteAddr string) error {
 	}
 
 	if sm.config.LogSecurityEvents {
-		logger.Info().Field("ip", host).Field("hostname", hostname).Msg("HELO validation passed")
+		logger.Debug().Field("ip", host).Field("hostname", hostname).Msg("HELO validation passed")
 	}
 
 	return nil
@@ -340,7 +340,7 @@ func (sm *SecurityManager) CloseConnection(remoteAddr string) {
 	}
 
 	if sm.config.LogSecurityEvents {
-		logger.Info().Field("ip", host).Field("remaining_connections", sm.ipConnections[host]).Msg("connection closed")
+		logger.Debug().Field("ip", host).Field("remaining_connections", sm.ipConnections[host]).Msg("connection closed")
 	}
 }
 

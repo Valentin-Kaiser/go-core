@@ -311,7 +311,7 @@ func (m *Manager) SendAsync(ctx context.Context, message *Message) error {
 
 	m.incrementQueuedCount()
 
-	logger.Info().
+	logger.Debug().
 		Field("id", message.ID).
 		Field("subject", message.Subject).
 		Field("to", message.To).

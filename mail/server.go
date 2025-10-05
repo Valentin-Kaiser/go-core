@@ -645,7 +645,7 @@ func (s *session) Data(r io.Reader) error {
 
 // Reset resets the session
 func (s *session) Reset() {
-	logger.Debug().Msg("SMTP session reset")
+	logger.Trace().Msg("SMTP session reset")
 	s.from = ""
 	s.to = nil
 }
@@ -654,7 +654,7 @@ func (s *session) Reset() {
 func (s *session) Logout() error {
 	// Clean up connection tracking in security manager
 	s.server.security.CloseConnection(s.remoteAddr)
-	logger.Debug().Msg("SMTP session logout")
+	logger.Trace().Msg("SMTP session logout")
 	return nil
 }
 
@@ -719,7 +719,7 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 		if err := netConn.Close(); err != nil {
 			// Check if this is a normal connection close/reset
 			if isConnectionClosed(err) {
-				logger.Debug().Err(err).Msg("connection closed")
+				logger.Trace().Err(err).Msg("connection closed")
 				return
 			}
 			logger.Error().Err(err).Msg("failed to close connection")
@@ -730,7 +730,7 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 	if s.config.ReadTimeout > 0 {
 		if err := netConn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
 			if isConnectionClosed(err) {
-				logger.Debug().Err(err).Msg("connection closed while setting read deadline")
+				logger.Trace().Err(err).Msg("connection closed while setting read deadline")
 				return
 			}
 			logger.Error().Err(err).Msg("failed to set read deadline")
@@ -740,7 +740,7 @@ func (s *smtpServer) handleConnection(netConn net.Conn) {
 	if s.config.WriteTimeout > 0 {
 		if err := netConn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
 			if isConnectionClosed(err) {
-				logger.Debug().Err(err).Msg("connection closed while setting write deadline")
+				logger.Trace().Err(err).Msg("connection closed while setting write deadline")
 				return
 			}
 			logger.Error().Err(err).Msg("failed to set write deadline")
@@ -798,7 +798,7 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 		if s.config.ReadTimeout > 0 {
 			if err := conn.SetReadDeadline(time.Now().Add(s.config.ReadTimeout)); err != nil {
 				if isConnectionClosed(err) {
-					logger.Debug().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection closed while updating read deadline")
+					logger.Trace().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection closed while updating read deadline")
 					return
 				}
 				logger.Error().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("failed to update read deadline")
@@ -810,7 +810,7 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 			if err := conn.scanner.Err(); err != nil {
 				// Check if this is a normal connection close/reset
 				if isConnectionClosed(err) {
-					logger.Debug().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection closed")
+					logger.Trace().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection closed")
 					return
 				}
 				logger.Error().Err(err).Field("remote_addr", conn.RemoteAddr()).Msg("connection read error")
@@ -887,10 +887,10 @@ func (s *smtpServer) writeRaw(conn *Conn, data string) {
 	if s.config.WriteTimeout > 0 {
 		if err := conn.SetWriteDeadline(time.Now().Add(s.config.WriteTimeout)); err != nil {
 			if isConnectionClosed(err) {
-				logger.Debug().Err(err).Msg("Connection closed while setting write deadline")
+				logger.Trace().Err(err).Msg("connection closed while setting write deadline")
 				return
 			}
-			logger.Warn().Err(err).Msg("Failed to set write deadline, continuing anyway")
+			logger.Warn().Err(err).Msg("failed to set write deadline, continuing anyway")
 		}
 	}
 

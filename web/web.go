@@ -169,7 +169,7 @@ func (s *Server) Start() *Server {
 		g, _ := errgroup.WithContext(context.Background())
 		if s.redirect != nil {
 			g.Go(func() error {
-				logger.Info().Fields(logging.F("addr", s.redirect.Addr)).Msg("redirecting HTTP to HTTPS")
+				logger.Debug().Fields(logging.F("addr", s.redirect.Addr)).Msg("redirecting HTTP to HTTPS")
 				err := s.redirect.ListenAndServe()
 				if err != nil && err != http.ErrServerClosed {
 					return apperror.NewError("failed to start redirect server").AddError(err)
