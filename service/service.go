@@ -1,4 +1,126 @@
-// Package service provides a simple way to create and manage system services (daemons) in Go applications.
+// Package service provides a simple and robust way to create, manage, and deploy
+// system services (daemons) in Go applications across different platforms.
+//
+// This package wraps the kardianos/service library and provides additional functionality
+// for application lifecycle management, including automatic path detection, graceful
+// shutdown handling, and seamless integration with other go-core packages.
+//
+// The package automatically detects whether the application is running in interactive
+// mode (console/terminal) or as a system service, and adjusts behavior accordingly.
+// When running as a service, it automatically configures the data directory relative
+// to the executable location.
+//
+// Features:
+//   - Cross-platform service management (Windows, Linux, macOS)
+//   - Automatic interactive vs service mode detection
+//   - Graceful startup and shutdown handling
+//   - Integration with go-core logging and configuration systems
+//   - Error handling and recovery mechanisms
+//   - Support for service installation, uninstallation, and control
+//
+// Basic Service Example:
+//
+//	package main
+//
+//	import (
+//		"context"
+//		"fmt"
+//		"time"
+//
+//		"github.com/Valentin-Kaiser/go-core/service"
+//		"github.com/Valentin-Kaiser/go-core/logging"
+//	)
+//
+//	func main() {
+//		// Configure service
+//		config := &service.Config{
+//			Name:        "MyApp",
+//			DisplayName: "My Application Service",
+//			Description: "A sample Go application running as a service",
+//		}
+//
+//		// Define start function
+//		start := func(s *service.Service) error {
+//			fmt.Println("Service starting...")
+//			// Your application logic here
+//			go func() {
+//				for {
+//					fmt.Println("Service is running...")
+//					time.Sleep(30 * time.Second)
+//				}
+//			}()
+//			return nil
+//		}
+//
+//		// Define stop function
+//		stop := func(s *service.Service) error {
+//			fmt.Println("Service stopping...")
+//			// Cleanup logic here
+//			return nil
+//		}
+//
+//		// Run the service
+//		if err := service.Run(config, start, stop); err != nil {
+//			panic(err)
+//		}
+//	}
+//
+// Web Server Service Example:
+//
+//	package main
+//
+//	import (
+//		"context"
+//		"net/http"
+//		"time"
+//
+//		"github.com/Valentin-Kaiser/go-core/service"
+//		"github.com/Valentin-Kaiser/go-core/web"
+//		"github.com/Valentin-Kaiser/go-core/logging"
+//	)
+//
+//	func main() {
+//		config := &service.Config{
+//			Name:        "WebService",
+//			DisplayName: "Web Service",
+//			Description: "HTTP web server running as a system service",
+//		}
+//
+//		var server *web.Server
+//
+//		start := func(s *service.Service) error {
+//			server = web.New().WithPort(8080)
+//
+//			server.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+//				w.Write([]byte("Service is running!"))
+//			})
+//
+//			go func() {
+//				if err := server.Start(); err != nil {
+//					logging.GetPackageLogger("main").Error().Err(err).Msg("Server failed")
+//				}
+//			}()
+//
+//			return nil
+//		}
+//
+//		stop := func(s *service.Service) error {
+//			if server != nil {
+//				return server.Shutdown()
+//			}
+//			return nil
+//		}
+//
+//		if err := service.Run(config, start, stop); err != nil {
+//			panic(err)
+//		}
+//	}
+//
+// Platform Support:
+//   - Windows: Runs as Windows Service
+//   - Linux: Runs as systemd service or SysV init script
+//   - macOS: Runs as launchd service
+//   - Development: Runs in interactive mode for testing
 package service
 
 import (
