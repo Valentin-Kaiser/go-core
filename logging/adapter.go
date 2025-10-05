@@ -1,21 +1,19 @@
 package logging
 
-import (
-	"context"
-)
-
 // Level represents log levels
 type Level int
 
+// Log level constants define the severity levels for logging operations.
+// These levels are ordered from most verbose (TraceLevel) to least verbose (DisabledLevel).
 const (
-	TraceLevel    Level = -1
-	DebugLevel    Level = 0
-	InfoLevel     Level = 1
-	WarnLevel     Level = 2
-	ErrorLevel    Level = 3
-	FatalLevel    Level = 4
-	PanicLevel    Level = 5
-	DisabledLevel Level = 6
+	TraceLevel    Level = -1 // TraceLevel logs very detailed diagnostic information
+	DebugLevel    Level = 0  // DebugLevel logs debug information useful for development
+	InfoLevel     Level = 1  // InfoLevel logs general information about application execution
+	WarnLevel     Level = 2  // WarnLevel logs warnings about potentially harmful situations
+	ErrorLevel    Level = 3  // ErrorLevel logs error events that might still allow the application to continue
+	FatalLevel    Level = 4  // FatalLevel logs very severe error events that will presumably lead the application to abort
+	PanicLevel    Level = 5  // PanicLevel logs error events that will cause the application to panic
+	DisabledLevel Level = 6  // DisabledLevel disables all logging
 )
 
 // String returns the string representation of the log level
@@ -57,10 +55,6 @@ type Adapter interface {
 	Panic() Event
 
 	Printf(format string, v ...interface{})
-
-	// Context-aware logging
-	WithContext(ctx context.Context) Adapter
-	WithFields(fields ...Field) Adapter
 
 	// Package-specific logger
 	WithPackage(pkg string) Adapter

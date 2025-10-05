@@ -1,8 +1,6 @@
 package log
 
 import (
-	"context"
-
 	"github.com/Valentin-Kaiser/go-core/logging"
 )
 
@@ -59,16 +57,6 @@ func Panic() logging.Event {
 // Printf logs a formatted message
 func Printf(format string, v ...interface{}) {
 	logging.GetGlobalAdapter().Printf(format, v...)
-}
-
-// WithContext returns a new logger with context
-func WithContext(ctx context.Context) logging.Adapter {
-	return logging.GetGlobalAdapter().WithContext(ctx)
-}
-
-// WithFields returns a new logger with additional fields
-func WithFields(fields ...logging.Field) logging.Adapter {
-	return logging.GetGlobalAdapter().WithFields(fields...)
 }
 
 // F is a helper function to create fields

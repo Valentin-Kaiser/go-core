@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"context"
 	"fmt"
 	"runtime"
 	"sync"
@@ -51,55 +50,58 @@ func NewDynamicAdapter(pkg string) Adapter {
 	return &DynamicAdapter{pkg: pkg}
 }
 
+// SetLevel sets the log level for this dynamic adapter by delegating to the current active adapter.
 func (d *DynamicAdapter) SetLevel(level Level) Adapter {
 	d.current().SetLevel(level)
 	return d
 }
 
+// GetLevel returns the current log level from the active adapter for this package.
 func (d *DynamicAdapter) GetLevel() Level {
 	return d.current().GetLevel()
 }
 
+// Trace returns a trace level event from the current active adapter.
 func (d *DynamicAdapter) Trace() Event {
 	return d.current().Trace()
 }
 
+// Debug returns a debug level event from the current active adapter.
 func (d *DynamicAdapter) Debug() Event {
 	return d.current().Debug()
 }
 
+// Info returns an info level event from the current active adapter.
 func (d *DynamicAdapter) Info() Event {
 	return d.current().Info()
 }
 
+// Warn returns a warn level event from the current active adapter.
 func (d *DynamicAdapter) Warn() Event {
 	return d.current().Warn()
 }
 
+// Error returns an error level event from the current active adapter.
 func (d *DynamicAdapter) Error() Event {
 	return d.current().Error()
 }
 
+// Fatal returns a fatal level event from the current active adapter.
 func (d *DynamicAdapter) Fatal() Event {
 	return d.current().Fatal()
 }
 
+// Panic returns a panic level event from the current active adapter.
 func (d *DynamicAdapter) Panic() Event {
 	return d.current().Panic()
 }
 
+// Printf logs a formatted message using the current active adapter.
 func (d *DynamicAdapter) Printf(format string, v ...interface{}) {
 	d.current().Printf(format, v...)
 }
 
-func (d *DynamicAdapter) WithContext(ctx context.Context) Adapter {
-	return d.current().WithContext(ctx)
-}
-
-func (d *DynamicAdapter) WithFields(fields ...Field) Adapter {
-	return d.current().WithFields(fields...)
-}
-
+// WithPackage returns a new adapter instance for the specified package from the current active adapter.
 func (d *DynamicAdapter) WithPackage(pkg string) Adapter {
 	return d.current().WithPackage(pkg)
 }

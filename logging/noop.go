@@ -1,7 +1,5 @@
 package logging
 
-import "context"
-
 // NoOpEvent implements Event interface but does nothing
 type NoOpEvent struct{}
 
@@ -84,16 +82,6 @@ func (n *NoOpAdapter) Panic() Event {
 }
 
 func (n *NoOpAdapter) Printf(format string, v ...interface{}) {}
-
-// WithContext returns the same no-op adapter
-func (n *NoOpAdapter) WithContext(ctx context.Context) Adapter {
-	return n
-}
-
-// WithFields returns the same no-op adapter
-func (n *NoOpAdapter) WithFields(fields ...Field) Adapter {
-	return n
-}
 
 // WithPackage returns the same no-op adapter
 func (n *NoOpAdapter) WithPackage(pkg string) Adapter {

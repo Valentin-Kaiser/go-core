@@ -1,7 +1,6 @@
 package log_test
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -45,18 +44,5 @@ func TestLoggerSingleton(t *testing.T) {
 
 	t.Run("printf logging", func(t *testing.T) {
 		log.Printf("formatted message: %s, number: %d", "test", 42)
-	})
-
-	t.Run("context and fields", func(t *testing.T) {
-		// Test WithContext and WithFields return proper adapters
-		ctxLogger := log.WithContext(context.TODO())
-		if ctxLogger == nil {
-			t.Error("WithContext should return a non-nil adapter")
-		}
-
-		fieldLogger := log.WithFields(log.F("component", "test"))
-		if fieldLogger == nil {
-			t.Error("WithFields should return a non-nil adapter")
-		}
 	})
 }

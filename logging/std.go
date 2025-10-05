@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -188,24 +187,6 @@ func (s *StandardAdapter) Panic() Event {
 // Printf prints a formatted message
 func (s *StandardAdapter) Printf(format string, v ...interface{}) {
 	s.logger.Printf(format, v...)
-}
-
-// WithContext returns a new adapter with context (no-op for standard log)
-func (s *StandardAdapter) WithContext(ctx context.Context) Adapter {
-	return &StandardAdapter{
-		logger: s.logger,
-		level:  s.level,
-	}
-}
-
-// WithFields returns a new adapter with additional fields
-func (s *StandardAdapter) WithFields(fields ...Field) Adapter {
-	// For standard log, we can't pre-add fields, so we return the same adapter
-	// Fields will be handled at the event level
-	return &StandardAdapter{
-		logger: s.logger,
-		level:  s.level,
-	}
 }
 
 // WithPackage returns a new adapter with package name field

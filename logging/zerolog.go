@@ -1,8 +1,6 @@
 package logging
 
 import (
-	"context"
-
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -163,28 +161,9 @@ func (z *ZerologAdapter) Panic() Event {
 	return e
 }
 
+// Printf logs a formatted message using the underlying zerolog logger.
 func (z *ZerologAdapter) Printf(format string, v ...interface{}) {
 	z.logger.Printf(format, v...)
-}
-
-// WithContext returns a new adapter with context
-func (z *ZerologAdapter) WithContext(ctx context.Context) Adapter {
-	return &ZerologAdapter{
-		logger: z.logger.With().Logger(),
-		level:  z.level,
-	}
-}
-
-// WithFields returns a new adapter with additional fields
-func (z *ZerologAdapter) WithFields(fields ...Field) Adapter {
-	logger := z.logger.With()
-	for _, field := range fields {
-		logger = logger.Interface(field.Key, field.Value)
-	}
-	return &ZerologAdapter{
-		logger: logger.Logger(),
-		level:  z.level,
-	}
 }
 
 // WithPackage returns a new adapter with package name field
