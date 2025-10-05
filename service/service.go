@@ -36,6 +36,8 @@ func init() {
 	}
 }
 
+// Run starts a service with the provided configuration and start/stop functions.
+// It handles signal management and graceful shutdown.
 func Run(config *Config, start func(s *Service) error, stop func(s *Service) error) error {
 	s := &Service{
 		err:   make(chan error, 1),
@@ -77,6 +79,7 @@ func Run(config *Config, start func(s *Service) error, stop func(s *Service) err
 	return apperror.Wrap(<-s.err)
 }
 
+// IsInteractive returns true if the service is running in interactive mode
 func IsInteractive() bool {
 	return interactive
 }

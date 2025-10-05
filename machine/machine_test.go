@@ -1,12 +1,14 @@
-package machine
+package machine_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/Valentin-Kaiser/go-core/machine"
 )
 
 func TestGeneratorBasic(t *testing.T) {
-	g := New().WithCPU().WithSystemUUID().WithMotherboard().WithMAC().WithDisk()
+	g := machine.New().WithCPU().WithSystemUUID().WithMotherboard().WithMAC().WithDisk()
 
 	id, err := g.ID()
 	if err != nil {
@@ -30,7 +32,7 @@ func TestGeneratorBasic(t *testing.T) {
 
 func TestGeneratorWithSalt(t *testing.T) {
 	salt := "test-salt"
-	g := New().WithCPU().WithSystemUUID().WithSalt(salt)
+	g := machine.New().WithCPU().WithSystemUUID().WithSalt(salt)
 
 	id, err := g.ID()
 	if err != nil {
@@ -42,7 +44,7 @@ func TestGeneratorWithSalt(t *testing.T) {
 	}
 
 	// Different salts should produce different IDs
-	g2 := New().WithCPU().WithSystemUUID().WithSalt("different-salt")
+	g2 := machine.New().WithCPU().WithSystemUUID().WithSalt("different-salt")
 	id2, err := g2.ID()
 	if err != nil {
 		t.Fatalf("ID() with different salt error = %v", err)
@@ -54,7 +56,7 @@ func TestGeneratorWithSalt(t *testing.T) {
 }
 
 func TestGeneratorValidate(t *testing.T) {
-	g := New().WithCPU().WithSystemUUID()
+	g := machine.New().WithCPU().WithSystemUUID()
 
 	id, err := g.ID()
 	if err != nil {
@@ -82,7 +84,7 @@ func TestGeneratorValidate(t *testing.T) {
 }
 
 func TestVMFriendly(t *testing.T) {
-	g := New().VMFriendly().WithSalt("vm-test")
+	g := machine.New().VMFriendly().WithSalt("vm-test")
 
 	id, err := g.ID()
 	if err != nil {
@@ -94,7 +96,7 @@ func TestVMFriendly(t *testing.T) {
 	}
 
 	// Test that it's different from full hardware
-	g2 := New().WithCPU().WithSystemUUID().WithMotherboard().WithMAC().WithDisk().WithSalt("vm-test")
+	g2 := machine.New().WithCPU().WithSystemUUID().WithMotherboard().WithMAC().WithDisk().WithSalt("vm-test")
 	id2, err := g2.ID()
 	if err != nil {
 		t.Fatalf("Full hardware ID() error = %v", err)
@@ -106,7 +108,7 @@ func TestVMFriendly(t *testing.T) {
 }
 
 func TestNoIdentifiersError(t *testing.T) {
-	g := New() // No identifiers enabled
+	g := machine.New() // No identifiers enabled
 
 	_, err := g.ID()
 	if err == nil {
@@ -121,7 +123,7 @@ func TestNoIdentifiersError(t *testing.T) {
 
 func TestGeneratorChaining(t *testing.T) {
 	// Test that method chaining works
-	g := New().
+	g := machine.New().
 		WithSalt("chain-test").
 		WithCPU().
 		WithSystemUUID().

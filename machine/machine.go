@@ -54,6 +54,7 @@ type generator struct {
 	includeDisk        bool
 }
 
+// New creates a new machine ID generator with default settings
 func New() *generator {
 	return &generator{}
 }
