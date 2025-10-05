@@ -897,7 +897,7 @@ func (s *smtpServer) writeRaw(conn *Conn, data string) {
 	conn.writer.WriteString(data)
 	conn.writer.Flush()
 
-	logger.Trace().Field("response", strings.TrimSpace(data)).Msg("Sent SMTP response")
+	logger.Trace().Field("response", strings.TrimSpace(data)).Msg("sent SMTP response")
 }
 
 // isConnectionClosed checks if an error indicates a normal connection close/reset
