@@ -53,8 +53,8 @@ const (
 	StatusAuthRequired   = 530
 )
 
-// MailOptions represents MAIL command options
-type MailOptions struct {
+// Options represents MAIL command options
+type Options struct {
 	Size int64
 	Body string
 	UTF8 bool
@@ -73,7 +73,7 @@ type Backend interface {
 // Session defines the interface for SMTP sessions
 type Session interface {
 	AuthPlain(username, password string) error
-	Mail(from string, opts *MailOptions) error
+	Mail(from string, opts *Options) error
 	Rcpt(to string, opts *RcptOptions) error
 	Data(r io.Reader) error
 	Reset()
@@ -534,7 +534,7 @@ func (s *session) AuthPlain(username, password string) error {
 }
 
 // Mail handles the MAIL FROM command
-func (s *session) Mail(from string, _ *MailOptions) error {
+func (s *session) Mail(from string, _ *Options) error {
 	// Validate HELO first if needed
 	if err := s.validateHeloIfNeeded(); err != nil {
 		return err
@@ -1056,7 +1056,7 @@ func (s *smtpServer) handleMail(conn *Conn, session Session, args string) {
 	from := strings.TrimSpace(args[5:])
 	from = strings.Trim(from, "<>")
 
-	opts := &MailOptions{}
+	opts := &Options{}
 	if err := session.Mail(from, opts); err != nil {
 		if errors.Is(err, ErrAuthRequired) {
 			s.writeResponse(conn, StatusAuthRequired, "Authentication required")

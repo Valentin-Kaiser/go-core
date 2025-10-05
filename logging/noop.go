@@ -4,46 +4,43 @@ package logging
 type NoOpEvent struct{}
 
 // Fields does nothing and returns itself for chaining
-func (e *NoOpEvent) Fields(fields ...Field) Event {
+func (e *NoOpEvent) Fields(_ ...Field) Event {
 	return e
 }
 
 // Field does nothing and returns itself for chaining
-func (e *NoOpEvent) Field(key string, value interface{}) Event {
+func (e *NoOpEvent) Field(_ string, _ interface{}) Event {
 	return e
 }
 
 // Err does nothing and returns itself for chaining
-func (e *NoOpEvent) Err(err error) Event {
+func (e *NoOpEvent) Err(_ error) Event {
 	return e
 }
 
 // Msg does nothing
-func (e *NoOpEvent) Msg(msg string) {}
+func (e *NoOpEvent) Msg(_ string) {}
 
 // Msgf does nothing
-func (e *NoOpEvent) Msgf(format string, v ...interface{}) {}
+func (e *NoOpEvent) Msgf(_ string, _ ...interface{}) {}
 
 // NoOpAdapter implements LogAdapter but does nothing
 // This is the default implementation for minimal overhead when logging is disabled
-type NoOpAdapter struct {
-	level Level
-}
+type NoOpAdapter struct{}
 
 // NewNoOpAdapter creates a new no-op adapter
 func NewNoOpAdapter() Adapter {
-	return &NoOpAdapter{level: DisabledLevel}
+	return &NoOpAdapter{}
 }
 
 // SetLevel sets the log level (no-op)
-func (n *NoOpAdapter) SetLevel(level Level) Adapter {
-	n.level = level
+func (n *NoOpAdapter) SetLevel(_ Level) Adapter {
 	return n
 }
 
 // GetLevel returns the current log level
 func (n *NoOpAdapter) GetLevel() Level {
-	return n.level
+	return DisabledLevel
 }
 
 // Trace returns a no-op event
@@ -81,9 +78,9 @@ func (n *NoOpAdapter) Panic() Event {
 	return &NoOpEvent{}
 }
 
-func (n *NoOpAdapter) Printf(format string, v ...interface{}) {}
+func (n *NoOpAdapter) Printf(_ string, _ ...interface{}) {}
 
 // WithPackage returns the same no-op adapter
-func (n *NoOpAdapter) WithPackage(pkg string) Adapter {
+func (n *NoOpAdapter) WithPackage(_ string) Adapter {
 	return n
 }

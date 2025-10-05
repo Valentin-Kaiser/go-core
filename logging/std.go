@@ -10,6 +10,7 @@ import (
 type StandardAdapter struct {
 	logger *log.Logger
 	level  Level
+	pkg    string
 }
 
 // NewStandardAdapter creates a new standard log adapter with the default logger
@@ -96,6 +97,11 @@ func (e *StandardEvent) formatMessage(msg string) string {
 
 	// Add the main message
 	parts = append(parts, msg)
+
+	// Add package name if set
+	if e.adapter.pkg != "" {
+		parts = append(parts, fmt.Sprintf("pkg=%s", e.adapter.pkg))
+	}
 
 	// Add fields
 	for _, field := range e.fields {
@@ -194,5 +200,6 @@ func (s *StandardAdapter) WithPackage(pkg string) Adapter {
 	return &StandardAdapter{
 		logger: s.logger,
 		level:  s.level,
+		pkg:    pkg,
 	}
 }

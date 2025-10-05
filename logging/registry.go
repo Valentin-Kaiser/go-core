@@ -8,7 +8,7 @@ import (
 
 var (
 	// global is the default adapter used when no package-specific adapter is set
-	global Adapter = NewNoOpAdapter()
+	global = NewNoOpAdapter()
 	// packages stores package-specific adapters
 	packages sync.Map
 	// mu protects the global adapter
@@ -165,7 +165,7 @@ func GetPackageLevel(pkg string) Level {
 // ListPackages returns all packages that have specific adapters
 func ListPackages() []string {
 	var p []string
-	packages.Range(func(key, value interface{}) bool {
+	packages.Range(func(key, _ interface{}) bool {
 		if pkg, ok := key.(string); ok {
 			p = append(p, pkg)
 		}

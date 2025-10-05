@@ -428,7 +428,7 @@ func TestManagerAddNotificationHandler(_ *testing.T) {
 	config := mail.DefaultConfig()
 	manager := mail.NewManager(config, nil)
 
-	handler := func(_ context.Context, _ string, to []string, _ io.Reader) error {
+	handler := func(_ context.Context, _ string, _ []string, _ io.Reader) error {
 		return nil
 	}
 
