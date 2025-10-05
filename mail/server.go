@@ -458,35 +458,6 @@ func (s *smtpServer) startWorkerPool() {
 	}
 }
 
-// backend implements the smtp.Backend interface
-type backend struct {
-	server *smtpServer
-}
-
-// NewSession creates a new SMTP session
-func (b *backend) NewSession(conn *Conn) (Session, error) {
-	remoteAddr := conn.RemoteAddr().String()
-
-	logger.Trace().
-		Field("remote_addr", remoteAddr).
-		Msg("new SMTP session")
-
-	// Validate connection using security manager
-	if err := b.server.security.ValidateConnection(remoteAddr); err != nil {
-		logger.Warn().
-			Field("remote_addr", remoteAddr).
-			Err(err).
-			Msg("connection rejected by security manager")
-		return nil, err
-	}
-
-	return &session{
-		server:     b.server,
-		conn:       conn,
-		remoteAddr: remoteAddr,
-	}, nil
-}
-
 // session implements the Session interface
 type session struct {
 	server        *smtpServer
@@ -838,9 +809,7 @@ func (s *smtpServer) handleCommands(conn *Conn, session Session) {
 		case "EHLO":
 			s.handleHelo(conn, args, true)
 		case "STARTTLS":
-			if s.handleStartTLS(conn) {
-				return // Connection upgraded to TLS, start over
-			}
+			s.handleStartTLS(conn)
 		case "AUTH":
 			s.handleAuth(conn, session, args)
 		case "MAIL":
@@ -968,16 +937,16 @@ func (s *smtpServer) handleHelo(conn *Conn, hostname string, extended bool) {
 }
 
 // handleStartTLS handles STARTTLS command
-func (s *smtpServer) handleStartTLS(conn *Conn) bool {
+func (s *smtpServer) handleStartTLS(conn *Conn) {
 	tlsConfig, err := s.loadTLSConfig()
 	if err != nil {
 		s.writeResponse(conn, StatusNotImplemented, "TLS not available")
-		return false
+		return
 	}
 
 	if conn.TLS() {
 		s.writeResponse(conn, StatusBadSequence, "Already using TLS")
-		return false
+		return
 	}
 
 	s.writeResponse(conn, StatusReady, "Ready to start TLS")
@@ -986,7 +955,7 @@ func (s *smtpServer) handleStartTLS(conn *Conn) bool {
 	tlsConn := tls.Server(conn, tlsConfig)
 	if err := tlsConn.Handshake(); err != nil {
 		logger.Error().Err(err).Msg("TLS handshake failed")
-		return false
+		return
 	}
 
 	conn.mutex.Lock()
@@ -996,8 +965,6 @@ func (s *smtpServer) handleStartTLS(conn *Conn) bool {
 	conn.tls = true
 	conn.authenticated = false // Reset auth after STARTTLS
 	conn.mutex.Unlock()
-
-	return false // Don't restart connection handling
 }
 
 // handleAuth handles AUTH command

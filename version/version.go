@@ -303,11 +303,7 @@ func String() string {
 
 // IsSemver checks if the provided tag is a valid Git tag in semantic versioning format "vX.Y.Z".
 func IsSemver(tag string) bool {
-	if !semver.MatchString(tag) {
-		return false
-	}
-
-	return true
+	return semver.MatchString(tag)
 }
 
 // ParseSemver parses the specified segment (major, minor, or patch) from the Git tag.
