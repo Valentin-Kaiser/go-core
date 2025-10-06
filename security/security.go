@@ -34,8 +34,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/cespare/xxhash/v2"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // GetRandomBytes Generates random Bytes using crypto/rand which is significantly

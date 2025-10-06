@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/cache"
 	"github.com/redis/go-redis/v9"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/cache"
 )
 
 func setupRedisTest(t *testing.T) *cache.RedisCache {

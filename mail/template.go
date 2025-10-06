@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )

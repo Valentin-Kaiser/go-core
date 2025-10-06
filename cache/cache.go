@@ -22,7 +22,7 @@
 //		"context"
 //		"time"
 //
-//		"github.com/Valentin-Kaiser/go-core/cache"
+//		"github.com/valentin-kaiser/go-core/cache"
 //	)
 //
 //	func main() {
@@ -71,8 +71,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/config"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/config"
 )
 
 // Cache defines the interface for cache implementations

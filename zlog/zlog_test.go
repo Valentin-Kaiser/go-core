@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/zlog"
 	"github.com/rs/zerolog"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/zlog"
 )
 
 func TestLogger(t *testing.T) {

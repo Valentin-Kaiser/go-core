@@ -36,7 +36,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/flag"
 )
 
 var (

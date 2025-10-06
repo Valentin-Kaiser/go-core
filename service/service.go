@@ -27,8 +27,8 @@
 //		"fmt"
 //		"time"
 //
-//		"github.com/Valentin-Kaiser/go-core/service"
-//		"github.com/Valentin-Kaiser/go-core/logging"
+//		"github.com/valentin-kaiser/go-core/service"
+//		"github.com/valentin-kaiser/go-core/logging"
 //	)
 //
 //	func main() {
@@ -74,9 +74,9 @@
 //		"net/http"
 //		"time"
 //
-//		"github.com/Valentin-Kaiser/go-core/service"
-//		"github.com/Valentin-Kaiser/go-core/web"
-//		"github.com/Valentin-Kaiser/go-core/logging"
+//		"github.com/valentin-kaiser/go-core/service"
+//		"github.com/valentin-kaiser/go-core/web"
+//		"github.com/valentin-kaiser/go-core/logging"
 //	)
 //
 //	func main() {
@@ -127,10 +127,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/logging"
 	"github.com/kardianos/service"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/logging"
 )
 
 var (

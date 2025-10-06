@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/interruption"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/interruption"
 )
 
 func TestHandle(t *testing.T) {

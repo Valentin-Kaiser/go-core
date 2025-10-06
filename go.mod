@@ -1,4 +1,4 @@
-module github.com/Valentin-Kaiser/go-core
+module github.com/valentin-kaiser/go-core
 
 go 1.24.2
 

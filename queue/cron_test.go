@@ -3,7 +3,7 @@ package queue_test
 import (
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/queue"
+	"github.com/valentin-kaiser/go-core/queue"
 )
 
 func TestValidateCronSpec(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/logging"
-	"github.com/Valentin-Kaiser/go-core/logging/log"
+	"github.com/valentin-kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/logging/log"
 )
 
 func TestLoggerSingleton(t *testing.T) {

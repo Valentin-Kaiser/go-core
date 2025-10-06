@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // MemoryCache implements an in-memory cache with LRU eviction support

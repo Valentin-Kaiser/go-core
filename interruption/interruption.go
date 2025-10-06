@@ -13,7 +13,7 @@
 //	package main
 //
 //	import (
-//		"github.com/Valentin-Kaiser/go-core/interruption"
+//		"github.com/valentin-kaiser/go-core/interruption"
 //		"fmt"
 //	)
 //
@@ -47,8 +47,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/logging"
 )
 
 var logger = logging.GetPackageLogger("interruption")

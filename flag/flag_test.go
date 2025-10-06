@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/flag"
 )
 
 func TestDefaultFlags(t *testing.T) {

@@ -3,7 +3,7 @@ package version_test
 import (
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/version"
+	"github.com/valentin-kaiser/go-core/version"
 )
 
 func TestGet(t *testing.T) {

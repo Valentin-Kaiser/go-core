@@ -43,7 +43,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 type generator struct {

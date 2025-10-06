@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/machine"
+	"github.com/valentin-kaiser/go-core/machine"
 )
 
 func TestGeneratorBasic(t *testing.T) {

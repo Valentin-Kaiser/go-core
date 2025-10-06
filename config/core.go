@@ -27,7 +27,7 @@
 //
 //	import (
 //	    "fmt"
-//	    "github.com/Valentin-Kaiser/go-core/config"
+//	    "github.com/valentin-kaiser/go-core/config"
 //	    "github.com/fsnotify/fsnotify"
 //	)
 //
@@ -91,11 +91,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/logging"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/pflag"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/logging"
 
 	"github.com/spf13/viper"
 	"github.com/stoewer/go-strcase"

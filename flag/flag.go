@@ -24,7 +24,7 @@
 //
 //	import (
 //		"fmt"
-//		"github.com/Valentin-Kaiser/go-core/flag"
+//		"github.com/valentin-kaiser/go-core/flag"
 //	)
 //
 //	var CustomFlag string

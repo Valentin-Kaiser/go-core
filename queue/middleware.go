@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // Middleware is a function that wraps a JobHandler

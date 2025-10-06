@@ -5,8 +5,8 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/config"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/config"
 )
 
 // Config holds the configuration for the mail package

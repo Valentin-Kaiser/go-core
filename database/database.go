@@ -23,9 +23,9 @@
 //		"fmt"
 //		"time"
 //
-//		"github.com/Valentin-Kaiser/go-core/database"
-//		"github.com/Valentin-Kaiser/go-core/flag"
-//		"github.com/Valentin-Kaiser/go-core/version"
+//		"github.com/valentin-kaiser/go-core/database"
+//		"github.com/valentin-kaiser/go-core/flag"
+//		"github.com/valentin-kaiser/go-core/version"
 //		"gorm.io/gorm"
 //	)
 //
@@ -77,11 +77,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/interruption"
-	"github.com/Valentin-Kaiser/go-core/logging"
-	"github.com/Valentin-Kaiser/go-core/version"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/interruption"
+	"github.com/valentin-kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/version"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"

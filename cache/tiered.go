@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // TieredCache implements a multi-tier cache system (e.g., L1: Memory, L2: Redis)

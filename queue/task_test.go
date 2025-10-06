@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/queue"
+	"github.com/valentin-kaiser/go-core/queue"
 )
 
 func TestTaskScheduler_RegisterIntervalTask(t *testing.T) {

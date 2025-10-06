@@ -20,8 +20,8 @@
 //		"context"
 //		"time"
 //
-//		"github.com/Valentin-Kaiser/go-core/mail"
-//		"github.com/Valentin-Kaiser/go-core/queue"
+//		"github.com/valentin-kaiser/go-core/mail"
+//		"github.com/valentin-kaiser/go-core/queue"
 //	)
 //
 //	func main() {
@@ -106,10 +106,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/logging"
-	"github.com/Valentin-Kaiser/go-core/queue"
 	"github.com/google/uuid"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/queue"
 )
 
 var logger = logging.GetPackageLogger("mail")

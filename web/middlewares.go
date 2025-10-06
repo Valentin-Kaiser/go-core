@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/logging"
-	"github.com/Valentin-Kaiser/go-core/version"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/version"
 )
 
 var (

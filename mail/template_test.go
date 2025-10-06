@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/mail"
+	"github.com/valentin-kaiser/go-core/mail"
 )
 
 func TestTemplateManager_Comprehensive(t *testing.T) {

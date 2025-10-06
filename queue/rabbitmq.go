@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // ErrNoJobAvailable is returned when no job is available in the queue

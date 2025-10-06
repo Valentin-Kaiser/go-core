@@ -19,7 +19,7 @@
 //
 //	"net/http"
 //
-//	"github.com/Valentin-Kaiser/go-core/web"
+//	"github.com/valentin-kaiser/go-core/web"
 //
 // )
 //
@@ -69,13 +69,13 @@ import (
 	"time"
 
 	"github.com/NYTimes/gziphandler"
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/interruption"
-	"github.com/Valentin-Kaiser/go-core/logging"
-	"github.com/Valentin-Kaiser/go-core/security"
-	"github.com/Valentin-Kaiser/go-core/zlog"
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/interruption"
+	"github.com/valentin-kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/security"
+	"github.com/valentin-kaiser/go-core/zlog"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 )

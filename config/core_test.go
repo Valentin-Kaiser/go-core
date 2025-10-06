@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/config"
-	"github.com/Valentin-Kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/config"
+	"github.com/valentin-kaiser/go-core/flag"
 )
 
 // TestConfig implements the Config interface for testing

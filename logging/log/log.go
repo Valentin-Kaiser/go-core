@@ -4,7 +4,7 @@
 package log
 
 import (
-	"github.com/Valentin-Kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/logging"
 )
 
 // Logger returns the current global logger adapter
