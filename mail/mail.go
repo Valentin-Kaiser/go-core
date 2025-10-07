@@ -568,6 +568,22 @@ func (m *Manager) WithFileServer(templatesPath string) *Manager {
 	return m
 }
 
+// WithTemplateFunc adds a template function to the template manager
+func (m *Manager) WithTemplateFunc(key string, fn interface{}) *Manager {
+	if m.TemplateManager != nil {
+		m.TemplateManager.WithTemplateFunc(key, fn)
+	}
+	return m
+}
+
+// WithDefaultFuncs adds default template functions to the template manager
+func (m *Manager) WithDefaultFuncs() *Manager {
+	if m.TemplateManager != nil {
+		m.TemplateManager.WithDefaultFuncs()
+	}
+	return m
+}
+
 // ReloadTemplates reloads all templates
 func (m *Manager) ReloadTemplates() error {
 	if m.TemplateManager != nil {

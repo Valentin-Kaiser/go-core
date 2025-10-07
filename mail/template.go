@@ -127,15 +127,59 @@ func (tm *TemplateManager) LoadTemplate(name string) (*template.Template, error)
 	return tmpl, nil
 }
 
-// RenderTemplate renders a template with the given data
-func (tm *TemplateManager) RenderTemplate(name string, data interface{}) (string, error) {
+// RenderTemplate renders a template with the given data and optional custom functions
+func (tm *TemplateManager) RenderTemplate(name string, data interface{}, funcs ...template.FuncMap) (string, error) {
 	if tm.Error != nil {
 		return "", tm.Error
 	}
 
-	tmpl, err := tm.LoadTemplate(name)
+	// Load template content from source
+	var content []byte
+	var err error
+
+	switch {
+	case tm.config.FileSystem != nil:
+		content, err = fs.ReadFile(tm.config.FileSystem, name)
+		if err != nil {
+			return "", apperror.NewError("template not found in filesystem").AddError(err)
+		}
+	case tm.config.TemplatesPath != "":
+		customPath := filepath.Clean(filepath.Join(tm.config.TemplatesPath, name))
+		if _, err := os.Stat(customPath); err != nil {
+			return "", apperror.NewError("template not found in templates path").AddError(err)
+		}
+
+		content, err = os.ReadFile(customPath)
+		if err != nil {
+			return "", apperror.NewError("failed to read template file").AddError(err)
+		}
+	default:
+		return "", apperror.NewError("no template source configured - use WithFS or WithFileServer")
+	}
+
+	// Build function map: start with global functions, then apply custom functions
+	funcMap := make(template.FuncMap)
+
+	// Thread-safe access to global functions
+	tm.mutex.RLock()
+	if tm.funcs != nil {
+		for key, fn := range tm.funcs {
+			funcMap[key] = fn
+		}
+	}
+	tm.mutex.RUnlock()
+
+	// Apply custom functions (later ones override earlier ones)
+	for _, customFunc := range funcs {
+		for key, fn := range customFunc {
+			funcMap[key] = fn
+		}
+	}
+
+	// Parse and execute template
+	tmpl, err := template.New(name).Funcs(funcMap).Parse(string(content))
 	if err != nil {
-		return "", apperror.Wrap(err)
+		return "", apperror.NewError("failed to parse template").AddError(err)
 	}
 
 	var buf bytes.Buffer
@@ -384,7 +428,7 @@ func (tm *TemplateManager) WithDefaultFuncs() *TemplateManager {
 			}
 			return dict
 		},
-		"formatDate": func(format string, date interface{}) string {
+		"date": func(format string, date interface{}) string {
 			// Handle different date types and formats
 			switch v := date.(type) {
 			case time.Time:

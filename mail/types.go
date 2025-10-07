@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"html/template"
 	"io"
 	"mime/multipart"
 	"strings"
@@ -34,6 +35,8 @@ type Message struct {
 	Template string `json:"template,omitempty"`
 	// TemplateData is the data to pass to the template
 	TemplateData interface{} `json:"template_data,omitempty"`
+	// TemplateFuncs contains template functions specific to this message (optional)
+	TemplateFuncs template.FuncMap `json:"-"`
 	// Attachments is a list of file attachments
 	Attachments []Attachment `json:"attachments,omitempty"`
 	// Headers contains additional email headers
@@ -206,6 +209,32 @@ func (b *MessageBuilder) HTMLBody(html string) *MessageBuilder {
 func (b *MessageBuilder) Template(name string, data interface{}) *MessageBuilder {
 	b.message.Template = name
 	b.message.TemplateData = data
+	return b
+}
+
+// WithTemplateFunc adds a template function for this message
+func (b *MessageBuilder) WithTemplateFunc(key string, fn interface{}) *MessageBuilder {
+	if b.Error != nil {
+		return b
+	}
+	if b.message.TemplateFuncs == nil {
+		b.message.TemplateFuncs = make(template.FuncMap)
+	}
+	b.message.TemplateFuncs[key] = fn
+	return b
+}
+
+// WithTemplateFuncs sets multiple template functions for this message
+func (b *MessageBuilder) WithTemplateFuncs(funcs template.FuncMap) *MessageBuilder {
+	if b.Error != nil {
+		return b
+	}
+	if b.message.TemplateFuncs == nil {
+		b.message.TemplateFuncs = make(template.FuncMap)
+	}
+	for key, fn := range funcs {
+		b.message.TemplateFuncs[key] = fn
+	}
 	return b
 }
 

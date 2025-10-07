@@ -117,12 +117,12 @@ func (s *smtpSender) processTemplate(message *Message) error {
 		return nil
 	}
 
-	htmlBody, err := s.templateManager.RenderTemplate(message.Template, message.TemplateData)
+	var err error
+	message.HTMLBody, err = s.templateManager.RenderTemplate(message.Template, message.TemplateData, message.TemplateFuncs)
 	if err != nil {
 		return apperror.Wrap(err)
 	}
 
-	message.HTMLBody = htmlBody
 	return nil
 }
 
