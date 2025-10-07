@@ -131,8 +131,21 @@ func flatten(data map[string]interface{}, prefix string) {
 			fullKey = prefix + "." + key
 		}
 
+		// Handle map[string]interface{}
 		if nested, ok := value.(map[string]interface{}); ok {
 			flatten(nested, fullKey)
+			continue
+		}
+
+		// Handle map[interface{}]interface{} (common with YAML unmarshaling)
+		if nestedInterface, ok := value.(map[interface{}]interface{}); ok {
+			nestedString := make(map[string]interface{})
+			for k, v := range nestedInterface {
+				if keyStr, ok := k.(string); ok {
+					nestedString[keyStr] = v
+				}
+			}
+			flatten(nestedString, fullKey)
 			continue
 		}
 
