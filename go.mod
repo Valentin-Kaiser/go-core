@@ -17,6 +17,7 @@ require (
 	golang.org/x/sync v0.17.0
 	golang.org/x/text v0.29.0
 	golang.org/x/time v0.13.0
+	google.golang.org/protobuf v1.36.10
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v2 v2.4.0
 	gorm.io/driver/mysql v1.6.0
