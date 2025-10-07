@@ -31,24 +31,23 @@ const (
 	ContextKeyWebSocketConn ContextKey = "websocket"
 )
 
-// service implements the RTLS-Suite API server with support for both
+// Service implements the RTLS-Suite API server with support for both
 // HTTP and WebSocket endpoints. It provides automatic method dispatch,
 // protocol buffer message handling, and context enrichment.
-type service struct {
-	protoreflect.FileDescriptor
-	server any
+type Service struct {
+	Server
 }
 
-// NewService creates a new jrpc service instance.
-func NewService() *service {
-	return &service{}
+// Server represents a jRPC service implementation.
+type Server interface {
+	// Descriptor returns the protocol buffer file descriptor for the service.
+	Descriptor() protoreflect.FileDescriptor
 }
 
-// Register registers a service implementation with its protocol buffer file descriptor.
-func (s *service) Register(desc protoreflect.FileDescriptor, impl any) *service {
-	s.FileDescriptor = desc
-	s.server = impl
-	return s
+// New creates a new jrpc service instance and registers the provided
+// service implementation. The service implementation has to implement the Descriptor method.
+func New(s Server) *Service {
+	return &Service{Server: s}
 }
 
 // Handle processes HTTP POST requests to API endpoints.
@@ -62,7 +61,7 @@ func (s *service) Register(desc protoreflect.FileDescriptor, impl any) *service 
 // Parameters:
 //   - w: HTTP ResponseWriter for sending the response
 //   - r: HTTP Request containing the API call
-func (s *service) Handle(w http.ResponseWriter, r *http.Request) {
+func (s *Service) Handle(w http.ResponseWriter, r *http.Request) {
 	ctx := WithHTTPContext(r.Context(), w, r)
 
 	service := r.PathValue("service")
@@ -128,7 +127,7 @@ func (s *service) Handle(w http.ResponseWriter, r *http.Request) {
 //   - w: HTTP ResponseWriter from the WebSocket upgrade
 //   - r: HTTP Request from the WebSocket upgrade
 //   - conn: Established WebSocket connection
-func (s *service) HandleWebsocket(w http.ResponseWriter, r *http.Request, conn *websocket.Conn) {
+func (s *Service) HandleWebsocket(w http.ResponseWriter, r *http.Request, conn *websocket.Conn) {
 	service := r.PathValue("service")
 	method := r.PathValue("method")
 
@@ -138,7 +137,7 @@ func (s *service) HandleWebsocket(w http.ResponseWriter, r *http.Request, conn *
 		return
 	}
 
-	m := reflect.ValueOf(s.server).MethodByName(method)
+	m := reflect.ValueOf(s.Server).MethodByName(method)
 	if !m.IsValid() {
 		s.closeWS(conn, websocket.CloseInternalServerErr, "method not found")
 		return
@@ -242,8 +241,8 @@ func GetWebSocketConn(ctx context.Context) (*websocket.Conn, bool) {
 	return conn, ok
 }
 
-func (s *service) call(ctx context.Context, method string, req proto.Message) (any, error) {
-	m := reflect.ValueOf(s.server).MethodByName(method)
+func (s *Service) call(ctx context.Context, method string, req proto.Message) (any, error) {
+	m := reflect.ValueOf(s.Server).MethodByName(method)
 	if !m.IsValid() {
 		return nil, apperror.NewError("method not found")
 	}
@@ -295,8 +294,8 @@ func (s *service) call(ctx context.Context, method string, req proto.Message) (a
 	return res, err
 }
 
-func (s *service) find(service, method string) (protoreflect.MethodDescriptor, error) {
-	sd := s.FileDescriptor.Services().ByName(protoreflect.Name(service))
+func (s *Service) find(service, method string) (protoreflect.MethodDescriptor, error) {
+	sd := s.Descriptor().Services().ByName(protoreflect.Name(service))
 	if sd == nil {
 		return nil, apperror.NewError("service not found")
 	}
@@ -308,7 +307,7 @@ func (s *service) find(service, method string) (protoreflect.MethodDescriptor, e
 	return md, nil
 }
 
-func (s *service) message(md protoreflect.MethodDescriptor) (proto.Message, error) {
+func (s *Service) message(md protoreflect.MethodDescriptor) (proto.Message, error) {
 	mt, err := protoregistry.GlobalTypes.FindMessageByName(md.Input().FullName())
 	if err != nil {
 		log.Error().Err(err).Msg("failed to find message type")
@@ -318,7 +317,7 @@ func (s *service) message(md protoreflect.MethodDescriptor) (proto.Message, erro
 	return mt.New().Interface(), nil
 }
 
-func (s *service) marshal(v any) ([]byte, error) {
+func (s *Service) marshal(v any) ([]byte, error) {
 	if pm, ok := v.(proto.Message); ok {
 		return protojson.MarshalOptions{
 			EmitUnpopulated: true,
@@ -353,7 +352,7 @@ func (s *service) marshal(v any) ([]byte, error) {
 }
 
 // handleBidirectionalStream handles bidirectional streaming WebSocket connections
-func (s *service) handleBidirectionalStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type) {
+func (s *Service) handleBidirectionalStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type) {
 	inType, outType := mt.In(1), mt.In(2)
 	inPtr, outPtr := inType.Elem(), outType.Elem()
 	in, out := reflect.MakeChan(inType, 0), reflect.MakeChan(outType, 0)
@@ -395,7 +394,7 @@ func (s *service) handleBidirectionalStream(ctx context.Context, conn *websocket
 }
 
 // handleServerStream handles server streaming WebSocket connections
-func (s *service) handleServerStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type, md protoreflect.MethodDescriptor) {
+func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type, md protoreflect.MethodDescriptor) {
 	outType := mt.In(2)
 	outPtr := outType.Elem()
 	out := reflect.MakeChan(outType, 0)
@@ -467,7 +466,7 @@ func (s *service) handleServerStream(ctx context.Context, conn *websocket.Conn, 
 }
 
 // handleClientStream handles client streaming WebSocket connections
-func (s *service) handleClientStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type) {
+func (s *Service) handleClientStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type) {
 	inType := mt.In(1)
 	inPtr := inType.Elem()
 	in := reflect.MakeChan(inType, 0)
@@ -526,7 +525,7 @@ func (s *service) handleClientStream(ctx context.Context, conn *websocket.Conn, 
 	}
 	s.closeWS(conn, websocket.CloseNormalClosure, "")
 }
-func (s *service) readWSMessage(conn *websocket.Conn, msgPtr reflect.Value) error {
+func (s *Service) readWSMessage(conn *websocket.Conn, msgPtr reflect.Value) error {
 	messageType, payload, err := conn.ReadMessage()
 	if err != nil {
 		return err
@@ -556,7 +555,7 @@ func (s *service) readWSMessage(conn *websocket.Conn, msgPtr reflect.Value) erro
 }
 
 // startMessageReader starts a goroutine to read messages from WebSocket into a channel
-func (s *service) startMessageReader(ctx context.Context, conn *websocket.Conn, inChan reflect.Value, inPtr reflect.Type) <-chan error {
+func (s *Service) startMessageReader(ctx context.Context, conn *websocket.Conn, inChan reflect.Value, inPtr reflect.Type) <-chan error {
 	read := make(chan error, 1)
 	go func() {
 		defer close(read)
@@ -590,7 +589,7 @@ func (s *service) startMessageReader(ctx context.Context, conn *websocket.Conn, 
 }
 
 // writeWSMessage marshals and writes a proto message to the WebSocket
-func (s *service) writeWSMessage(conn *websocket.Conn, val reflect.Value, t reflect.Type) error {
+func (s *Service) writeWSMessage(conn *websocket.Conn, val reflect.Value, t reflect.Type) error {
 	var out any
 	switch t.Kind() {
 	case reflect.Ptr, reflect.Struct:
@@ -613,7 +612,7 @@ func (s *service) writeWSMessage(conn *websocket.Conn, val reflect.Value, t refl
 }
 
 // startMessageWriter starts a goroutine to write messages from a channel to WebSocket
-func (s *service) startMessageWriter(ctx context.Context, conn *websocket.Conn, outChan reflect.Value, outPtr reflect.Type) <-chan struct{} {
+func (s *Service) startMessageWriter(ctx context.Context, conn *websocket.Conn, outChan reflect.Value, outPtr reflect.Type) <-chan struct{} {
 	write := make(chan struct{})
 	go func() {
 		defer close(write)
@@ -633,7 +632,7 @@ func (s *service) startMessageWriter(ctx context.Context, conn *websocket.Conn, 
 	return write
 }
 
-func (s *service) closeWS(conn *websocket.Conn, code int, reason string) {
+func (s *Service) closeWS(conn *websocket.Conn, code int, reason string) {
 	err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), time.Now().Add(time.Second))
 	if err != nil && !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
 		log.Error().Err(err).Msg("failed to send websocket close message")
@@ -656,7 +655,7 @@ const (
 )
 
 // validateMethodSignature validates and determines the streaming type of a method
-func (s *service) validateMethodSignature(mt reflect.Type, md protoreflect.MethodDescriptor) (StreamingType, error) {
+func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.MethodDescriptor) (StreamingType, error) {
 	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
 	errorType := reflect.TypeOf((*error)(nil)).Elem()
 
@@ -797,7 +796,7 @@ func (s *service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 }
 
 // getProtoMessageType resolves a proto message descriptor to its Go reflect.Type
-func (s *service) getProtoMessageType(msgDesc protoreflect.MessageDescriptor) (reflect.Type, error) {
+func (s *Service) getProtoMessageType(msgDesc protoreflect.MessageDescriptor) (reflect.Type, error) {
 	mt, err := protoregistry.GlobalTypes.FindMessageByName(msgDesc.FullName())
 	if err != nil {
 		// Fallback to dynamic message
@@ -808,7 +807,7 @@ func (s *service) getProtoMessageType(msgDesc protoreflect.MessageDescriptor) (r
 }
 
 // typesMatch checks if two reflect.Types represent the same proto message type
-func (s *service) typesMatch(actual, expected reflect.Type) bool {
+func (s *Service) typesMatch(actual, expected reflect.Type) bool {
 	// Direct type comparison
 	if actual == expected {
 		return true
