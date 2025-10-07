@@ -41,25 +41,27 @@ func (t TaskType) String() string {
 
 // Task represents a scheduled task
 type Task struct {
-	ID              string        `json:"id"`
-	Name            string        `json:"name"`
-	Type            TaskType      `json:"type"`
-	CronSpec        string        `json:"cron_spec,omitempty"`
-	Interval        time.Duration `json:"interval,omitempty"`
-	Function        TaskFunc      `json:"-"`
-	NextRun         time.Time     `json:"next_run"`
-	LastRun         time.Time     `json:"last_run"`
-	RunCount        int64         `json:"run_count"`
-	ErrorCount      int64         `json:"error_count"`
-	LastError       string        `json:"last_error,omitempty"`
-	IsRunning       bool          `json:"is_running"`
-	AllowConcurrent bool          `json:"allow_concurrent"`
-	MaxRetries      int           `json:"max_retries"`
-	RetryDelay      time.Duration `json:"retry_delay"`
-	Timeout         time.Duration `json:"timeout"`
-	Enabled         bool          `json:"enabled"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+	ID                  string        `json:"id"`
+	Name                string        `json:"name"`
+	Type                TaskType      `json:"type"`
+	CronSpec            string        `json:"cron_spec,omitempty"`
+	Interval            time.Duration `json:"interval,omitempty"`
+	Function            TaskFunc      `json:"-"`
+	NextRun             time.Time     `json:"next_run"`
+	LastRun             time.Time     `json:"last_run"`
+	RunCount            int64         `json:"run_count"`
+	ErrorCount          int64         `json:"error_count"`
+	ConsecutiveFailures int64         `json:"consecutive_failures"`
+	LastError           string        `json:"last_error,omitempty"`
+	IsRunning           bool          `json:"is_running"`
+	Quiet               bool          `json:"log_on_first_failure_only"`
+	AllowConcurrent     bool          `json:"allow_concurrent"`
+	MaxRetries          int           `json:"max_retries"`
+	RetryDelay          time.Duration `json:"retry_delay"`
+	Timeout             time.Duration `json:"timeout"`
+	Enabled             bool          `json:"enabled"`
+	CreatedAt           time.Time     `json:"created_at"`
+	UpdatedAt           time.Time     `json:"updated_at"`
 }
 
 // TaskScheduler manages background tasks
@@ -71,7 +73,6 @@ type TaskScheduler struct {
 	workerWg       sync.WaitGroup
 	checkInterval  time.Duration
 	defaultTimeout time.Duration
-	defaultRetries int
 	retryDelay     time.Duration
 	cancel         context.CancelFunc
 }
@@ -83,7 +84,6 @@ func NewTaskScheduler() *TaskScheduler {
 		shutdownChan:   make(chan struct{}),
 		checkInterval:  time.Second * 10,
 		defaultTimeout: time.Minute * 5,
-		defaultRetries: 3,
 		retryDelay:     time.Second * 5,
 	}
 }
@@ -104,14 +104,6 @@ func (s *TaskScheduler) WithDefaultTimeout(timeout time.Duration) *TaskScheduler
 	return s
 }
 
-// WithDefaultRetries sets the default number of retries for failed tasks
-func (s *TaskScheduler) WithDefaultRetries(retries int) *TaskScheduler {
-	if retries >= 0 {
-		s.defaultRetries = retries
-	}
-	return s
-}
-
 // WithRetryDelay sets the delay between retries
 func (s *TaskScheduler) WithRetryDelay(delay time.Duration) *TaskScheduler {
 	if delay > 0 {
@@ -128,17 +120,24 @@ func (s *TaskScheduler) RegisterCronTask(name, cronSpec string, fn TaskFunc) err
 // RegisterIntervalTask registers a new interval-based task
 func (s *TaskScheduler) RegisterIntervalTask(name string, interval time.Duration, fn TaskFunc) error {
 	return s.RegisterIntervalTaskWithOptions(name, interval, fn, TaskOptions{
-		RunImmediately: true,
+		Immediately: true,
 	})
 }
 
 // TaskOptions provides configuration options for tasks
 type TaskOptions struct {
-	MaxRetries      int
-	RetryDelay      time.Duration
-	Timeout         time.Duration
-	AllowConcurrent bool
-	RunImmediately  bool
+	// MaxRetries specifies the maximum number of retries for a task default is 0 (no retries)
+	MaxRetries int
+	// RetryDelay specifies the delay between retries (default is 5 seconds)
+	RetryDelay time.Duration
+	// Timeout specifies the maximum duration for task execution (default is 5 minutes)
+	Timeout time.Duration
+	// Concurrent specifies whether the task can run concurrently (default is false)
+	Concurrent bool
+	// Immediately specifies whether the task should run immediately upon registration (default is false)
+	Immediately bool
+	// Quiet specifies whether to log only the first failure in a series of consecutive failures (default is false)
+	Quiet bool
 }
 
 // RegisterCronTaskWithOptions registers a new cron-based task with options
@@ -163,11 +162,6 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 		return apperror.NewError(fmt.Sprintf("task with name '%s' already exists", name))
 	}
 
-	maxRetries := s.defaultRetries
-	if options.MaxRetries > 0 {
-		maxRetries = options.MaxRetries
-	}
-
 	retryDelay := s.retryDelay
 	if options.RetryDelay > 0 {
 		retryDelay = options.RetryDelay
@@ -183,10 +177,11 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 		Type:            TaskTypeCron,
 		CronSpec:        cronSpec,
 		Function:        fn,
-		AllowConcurrent: options.AllowConcurrent,
-		MaxRetries:      maxRetries,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
 		RetryDelay:      retryDelay,
 		Timeout:         timeout,
+		Quiet:           options.Quiet,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 		Enabled:         true,
@@ -198,7 +193,7 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 	}
 
 	task.NextRun = nextRun
-	if options.RunImmediately {
+	if options.Immediately {
 		task.NextRun = time.Now()
 	}
 	s.tasks[name] = task
@@ -231,11 +226,6 @@ func (s *TaskScheduler) RegisterIntervalTaskWithOptions(name string, interval ti
 		return apperror.NewError(fmt.Sprintf("task with name '%s' already exists", name))
 	}
 
-	maxRetries := s.defaultRetries
-	if options.MaxRetries > 0 {
-		maxRetries = options.MaxRetries
-	}
-
 	retryDelay := s.retryDelay
 	if options.RetryDelay > 0 {
 		retryDelay = options.RetryDelay
@@ -252,17 +242,18 @@ func (s *TaskScheduler) RegisterIntervalTaskWithOptions(name string, interval ti
 		Type:            TaskTypeInterval,
 		Interval:        interval,
 		Function:        fn,
-		AllowConcurrent: options.AllowConcurrent,
-		MaxRetries:      maxRetries,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
 		RetryDelay:      retryDelay,
 		Timeout:         timeout,
+		Quiet:           options.Quiet,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 		Enabled:         true,
 	}
 
 	task.NextRun = time.Now().Add(interval)
-	if options.RunImmediately {
+	if options.Immediately {
 		task.NextRun = time.Now()
 	}
 
@@ -327,7 +318,7 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 		existingTask.UpdatedAt = time.Now()
 
 		// Update options if provided
-		if options.MaxRetries > 0 {
+		if options.MaxRetries >= 0 { // Allow explicit 0 to disable retries
 			existingTask.MaxRetries = options.MaxRetries
 		}
 		if options.RetryDelay > 0 {
@@ -336,7 +327,8 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 		if options.Timeout > 0 {
 			existingTask.Timeout = options.Timeout
 		}
-		existingTask.AllowConcurrent = options.AllowConcurrent
+		existingTask.AllowConcurrent = options.Concurrent
+		existingTask.Quiet = options.Quiet
 
 		logger.Trace().
 			Field("task_name", name).
@@ -345,12 +337,6 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 			Msg("existing cron task rescheduled")
 
 		return nil
-	}
-
-	// Task doesn't exist, register new one
-	maxRetries := s.defaultRetries
-	if options.MaxRetries > 0 {
-		maxRetries = options.MaxRetries
 	}
 
 	retryDelay := s.retryDelay
@@ -369,10 +355,11 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 		Type:            TaskTypeCron,
 		CronSpec:        cronSpec,
 		Function:        fn,
-		AllowConcurrent: options.AllowConcurrent,
-		MaxRetries:      maxRetries,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
 		RetryDelay:      retryDelay,
 		Timeout:         timeout,
+		Quiet:           options.Quiet,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 		Enabled:         true,
@@ -384,7 +371,7 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 	}
 
 	task.NextRun = nextRun
-	if options.RunImmediately {
+	if options.Immediately {
 		task.NextRun = time.Now()
 	}
 	s.tasks[name] = task
@@ -428,7 +415,7 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 		existingTask.NextRun = time.Now().Add(interval)
 		existingTask.UpdatedAt = time.Now()
 		// Update options if provided
-		if options.MaxRetries > 0 {
+		if options.MaxRetries >= 0 { // Allow explicit 0 to disable retries
 			existingTask.MaxRetries = options.MaxRetries
 		}
 		if options.RetryDelay > 0 {
@@ -437,7 +424,8 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 		if options.Timeout > 0 {
 			existingTask.Timeout = options.Timeout
 		}
-		existingTask.AllowConcurrent = options.AllowConcurrent
+		existingTask.AllowConcurrent = options.Concurrent
+		existingTask.Quiet = options.Quiet
 
 		logger.Trace().
 			Field("task_name", name).
@@ -446,12 +434,6 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 			Msg("existing interval task rescheduled")
 
 		return nil
-	}
-
-	// Task doesn't exist, register new one
-	maxRetries := s.defaultRetries
-	if options.MaxRetries > 0 {
-		maxRetries = options.MaxRetries
 	}
 
 	retryDelay := s.retryDelay
@@ -470,17 +452,18 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 		Type:            TaskTypeInterval,
 		Interval:        interval,
 		Function:        fn,
-		AllowConcurrent: options.AllowConcurrent,
-		MaxRetries:      maxRetries,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
 		RetryDelay:      retryDelay,
 		Timeout:         timeout,
+		Quiet:           options.Quiet,
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
 		Enabled:         true,
 	}
 
 	task.NextRun = time.Now().Add(interval)
-	if options.RunImmediately {
+	if options.Immediately {
 		task.NextRun = time.Now()
 	}
 
@@ -614,10 +597,9 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 			}
 			task.LastRun = time.Now()
 			task.RunCount++
+			task.ConsecutiveFailures = 0 // Reset consecutive failures on success
 			task.LastError = ""
-			task.UpdatedAt = time.Now()
-
-			// For non-concurrent tasks, update next run time after completion
+			task.UpdatedAt = time.Now() // For non-concurrent tasks, update next run time after completion
 			// For concurrent tasks, this was already done at the start
 			if !task.AllowConcurrent {
 				err = s.updateNextRun(task)
@@ -639,11 +621,13 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		}
 
 		lastError = err
-		logger.Warn().
-			Err(err).
-			Field("task_name", task.Name).
-			Field("attempt", attempt+1).
-			Msg("task execution failed")
+		if !task.Quiet || task.ConsecutiveFailures == 0 && task.MaxRetries > 0 {
+			logger.Warn().
+				Err(err).
+				Field("task_name", task.Name).
+				Field("attempt", attempt+1).
+				Msg("task execution failed")
+		}
 
 		if attempt < task.MaxRetries {
 			select {
@@ -655,18 +639,11 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 	}
 
 	s.tasksMutex.Lock()
-	// Only mark as not running for non-concurrent tasks
-	if !task.AllowConcurrent {
-		task.IsRunning = false
-	}
-	task.LastRun = time.Now()
-	task.ErrorCount++
-	task.LastError = lastError.Error()
-	task.UpdatedAt = time.Now()
 
 	// For non-concurrent tasks, update next run time after completion
 	// For concurrent tasks, this was already done at the start
 	if !task.AllowConcurrent {
+		task.IsRunning = false
 		err := s.updateNextRun(task)
 		if err != nil {
 			logger.Error().
@@ -675,14 +652,21 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 				Msg("failed to update next run time after retries")
 		}
 	}
-	s.tasksMutex.Unlock()
+	task.ErrorCount++
+	if !task.Quiet || task.ConsecutiveFailures == 0 {
+		logger.Error().
+			Err(lastError).
+			Field("task_name", task.Name).
+			Field("error_count", task.ErrorCount).
+			Field("next_run", task.NextRun).
+			Msg("task execution failed")
+	}
 
-	logger.Error().
-		Err(lastError).
-		Field("task_name", task.Name).
-		Field("error_count", task.ErrorCount).
-		Field("next_run", task.NextRun).
-		Msg("task execution failed after all retries")
+	task.LastRun = time.Now()
+	task.ConsecutiveFailures++ // Increment consecutive failures
+	task.LastError = lastError.Error()
+	task.UpdatedAt = time.Now()
+	s.tasksMutex.Unlock()
 }
 
 func (s *TaskScheduler) updateNextRun(task *Task) error {

@@ -207,9 +207,9 @@ func TestTaskScheduler_TaskRetry(t *testing.T) {
 	}
 
 	err := scheduler.RegisterIntervalTaskWithOptions("retry-task", time.Second*10, taskFunc, queue.TaskOptions{
-		MaxRetries:     3,
-		RetryDelay:     time.Millisecond * 30,
-		RunImmediately: true, // Run immediately for this test
+		MaxRetries:  3,
+		RetryDelay:  time.Millisecond * 30,
+		Immediately: true, // Run immediately for this test
 	})
 	if err != nil {
 		t.Fatalf("failed to register task: %v", err)
@@ -272,9 +272,9 @@ func TestTaskScheduler_TaskFailure(t *testing.T) {
 	}
 
 	err := scheduler.RegisterIntervalTaskWithOptions("failing-task", time.Second*5, taskFunc, queue.TaskOptions{
-		MaxRetries:     2,
-		RetryDelay:     time.Millisecond * 30,
-		RunImmediately: true, // Run immediately for this test
+		MaxRetries:  2,
+		RetryDelay:  time.Millisecond * 30,
+		Immediately: true, // Run immediately for this test
 	})
 	if err != nil {
 		t.Fatalf("failed to register task: %v", err)
@@ -489,7 +489,7 @@ func TestTaskScheduler_ConcurrentExecution(t *testing.T) {
 
 	// Test concurrent task
 	err = scheduler.RegisterIntervalTaskWithOptions("concurrent", 150*time.Millisecond, taskFunc, queue.TaskOptions{
-		AllowConcurrent: true,
+		Concurrent: true,
 	})
 	if err != nil {
 		t.Fatalf("failed to register concurrent task: %v", err)
@@ -569,7 +569,7 @@ func TestTaskScheduler_ConcurrentCronExecution(t *testing.T) {
 
 	// Test concurrent cron task that runs every second
 	err := scheduler.RegisterCronTaskWithOptions("concurrent-cron", "* * * * * *", taskFunc, queue.TaskOptions{
-		AllowConcurrent: true,
+		Concurrent: true,
 	})
 	if err != nil {
 		t.Fatalf("failed to register concurrent cron task: %v", err)
@@ -636,7 +636,7 @@ func TestTaskScheduler_RunImmediately(t *testing.T) {
 
 	// Test cron task with RunImmediately = true
 	err := scheduler.RegisterCronTaskWithOptions("cron-immediate", "*/30 * * * * *", cronTaskFunc, queue.TaskOptions{
-		RunImmediately: true,
+		Immediately: true,
 	})
 	if err != nil {
 		t.Fatalf("failed to register immediate cron task: %v", err)
@@ -644,7 +644,7 @@ func TestTaskScheduler_RunImmediately(t *testing.T) {
 
 	// Test cron task with RunImmediately = false (default)
 	err = scheduler.RegisterCronTaskWithOptions("cron-scheduled", "*/30 * * * * *", cronTaskFunc, queue.TaskOptions{
-		RunImmediately: false,
+		Immediately: false,
 	})
 	if err != nil {
 		t.Fatalf("failed to register scheduled cron task: %v", err)
@@ -652,7 +652,7 @@ func TestTaskScheduler_RunImmediately(t *testing.T) {
 
 	// Test interval task with RunImmediately = false
 	err = scheduler.RegisterIntervalTaskWithOptions("interval-scheduled", 2*time.Second, intervalTaskFunc, queue.TaskOptions{
-		RunImmediately: false,
+		Immediately: false,
 	})
 	if err != nil {
 		t.Fatalf("failed to register scheduled interval task: %v", err)
