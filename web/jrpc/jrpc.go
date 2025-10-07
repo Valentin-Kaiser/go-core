@@ -1,3 +1,62 @@
+// Package jrpc provides a JSON-RPC over HTTP and WebSocket implementation with
+// Protocol Buffer support. It enables automatic method dispatch, streaming
+// capabilities, and context enrichment for service implementations.
+//
+// This package requires server definitions to be generated from Protocol Buffer
+// service definitions using the protoc-gen-jrpc plugin:
+// https://github.com/valentin-kaiser/protoc-gen-jrpc
+//
+// The plugin generates the correct struct implementations that satisfy the
+// Server interface, ensuring proper integration with the jRPC service framework.
+//
+// Features:
+//   - HTTP and WebSocket endpoint support
+//   - Automatic method resolution and dispatch
+//   - Protocol Buffer JSON marshaling/unmarshaling
+//   - Multiple streaming patterns (unary, server, client, bidirectional)
+//   - Context enrichment with HTTP and WebSocket components
+//   - Comprehensive error handling and connection management
+//
+// Usage:
+//  1. Define your service in a .proto file
+//  2. Generate Go code using protoc with the protoc-gen-jrpc plugin
+//  3. Implement the generated Server interface
+//  4. Create a new jRPC service with jrpc.New(yourServer)
+//  5. Register the HandlerFunc with the web package function WithJRPC
+//
+// Example:
+//
+//	  ```go
+//	 package main
+//
+//	  import (
+//		     "context"
+//	      "log"
+//	      "net/http"
+//	  	 "github.com/valentin-kaiser/go-core/web"
+//	      "github.com/valentin-kaiser/go-core/web/jrpc"
+//	  )
+//
+//	  type MyService struct {
+//	      jrpc.UnimplementedMyServiceServer
+//	  }
+//
+//	  func (s *MyService) MyMethod(ctx context.Context, req *MyRequest) (*MyResponse, error) {
+//	      // Implement your method logic here
+//	      return &MyResponse{}, nil
+//	  }
+//
+//	  func main() {
+//	      err := web.Instance().
+//	          WithHost("localhost").
+//	          WithPort(8080).
+//	          WithJRPC(jrpc.New(&MyService{})).
+//	          Start().Error
+//	      if err != nil {
+//	          log.Fatal().Err(err).Msg("server exited")
+//	      }
+//	  }
+//	  ```
 package jrpc
 
 import (
