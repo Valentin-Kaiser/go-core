@@ -10,12 +10,6 @@ import (
 	"github.com/valentin-kaiser/go-core/apperror"
 )
 
-func setEnvPrefix(prefix string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	envPrefix = strings.ToUpper(prefix)
-}
-
 func setDefault(key string, value interface{}) {
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -23,23 +17,22 @@ func setDefault(key string, value interface{}) {
 	defaults[lowerKey] = value
 }
 
-func bindPFlag(key string, flag *pflag.Flag) error {
+func bind(key string, flag *pflag.Flag) error {
 	mutex.Lock()
 	defer mutex.Unlock()
 	flags[strings.ToLower(key)] = flag
 	return nil
 }
 
-func getEnvKey(key string) string {
-	// Convert key from dot notation to env var format
-	envKey := strings.ReplaceAll(key, ".", "_")
-	envKey = strings.ReplaceAll(envKey, "-", "_")
-	envKey = strings.ToUpper(envKey)
+func getFlagKey(key string) string {
+	key = strings.ReplaceAll(key, ".", "_")
+	key = strings.ReplaceAll(key, "-", "_")
+	key = strings.ToUpper(key)
 
-	if envPrefix == "" {
-		return envKey
+	if prefix == "" {
+		return key
 	}
-	return envPrefix + "_" + envKey
+	return prefix + "_" + key
 }
 
 func getFlagValue(flag *pflag.Flag) interface{} {
@@ -140,7 +133,7 @@ func declareFlag(label string, usage string, defaultValue interface{}) error {
 	// Check if flag already exists to avoid redefinition errors
 	if pflag.Lookup(pflagLabel) != nil {
 		// Flag already exists, just bind to config
-		return bindPFlag(label, pflag.Lookup(pflagLabel))
+		return bind(label, pflag.Lookup(pflagLabel))
 	}
 
 	switch v := defaultValue.(type) {
@@ -178,7 +171,7 @@ func declareFlag(label string, usage string, defaultValue interface{}) error {
 		return nil
 	}
 
-	return bindPFlag(label, pflag.Lookup(pflagLabel))
+	return bind(label, pflag.Lookup(pflagLabel))
 }
 
 // parseStructTags parses the struct tags of the given struct and registers the flags

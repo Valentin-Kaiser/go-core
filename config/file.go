@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/spf13/pflag"
 	"github.com/valentin-kaiser/go-core/apperror"
 	"github.com/valentin-kaiser/go-core/flag"
 
@@ -16,13 +15,7 @@ import (
 func setConfigName(name string) {
 	mutex.Lock()
 	defer mutex.Unlock()
-	configname = name
-}
-
-func setConfigType(configTypeValue string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	configType = configTypeValue
+	configName = name
 }
 
 func addConfigPath(path string) {
@@ -31,15 +24,15 @@ func addConfigPath(path string) {
 	configPath = path
 }
 
-func readInConfig() error {
+func read() error {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	if configname == "" || configPath == "" {
+	if configName == "" || configPath == "" {
 		return apperror.NewError("config name and path must be set")
 	}
 
-	configFile := filepath.Join(configPath, configname+"."+configType)
+	configFile := filepath.Join(configPath, configName+".yaml")
 
 	data, err := os.ReadFile(filepath.Clean(configFile))
 	if err != nil {
@@ -51,30 +44,13 @@ func readInConfig() error {
 		return err
 	}
 
-	// Flatten nested structure to dot notation
 	values = make(map[string]interface{})
-	flattenMap(yamlData, "")
+	flatten(yamlData, "")
 
 	return nil
 }
 
-func flattenMap(data map[string]interface{}, prefix string) {
-	for key, value := range data {
-		fullKey := key
-		if prefix != "" {
-			fullKey = prefix + "." + key
-		}
-
-		if nested, ok := value.(map[string]interface{}); ok {
-			flattenMap(nested, fullKey)
-			continue
-		}
-
-		values[strings.ToLower(fullKey)] = value
-	}
-}
-
-func watchConfig(onChange func(fsnotify.Event)) error {
+func watch(onChange func(fsnotify.Event)) error {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -82,15 +58,13 @@ func watchConfig(onChange func(fsnotify.Event)) error {
 		watcher.Close()
 	}
 
-	newWatcher, err := fsnotify.NewWatcher()
+	var err error
+	watcher, err = fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
 
-	watcher = newWatcher
-
-	configFile := filepath.Join(configPath, configname+"."+configType)
-
+	configFile := filepath.Join(configPath, configName+".yaml")
 	go func() {
 		for {
 			select {
@@ -113,23 +87,6 @@ func watchConfig(onChange func(fsnotify.Event)) error {
 	return watcher.Add(configPath)
 }
 
-func resetConfig() {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	if watcher != nil {
-		watcher.Close()
-		watcher = nil
-	}
-
-	envPrefix = ""
-	defaults = make(map[string]interface{})
-	values = make(map[string]interface{})
-	flags = make(map[string]*pflag.Flag)
-	configPath = ""
-	configType = ""
-}
-
 // save saves the configuration to the file
 // If the file does not exist, it creates a new one with the default values
 func save() error {
@@ -138,7 +95,7 @@ func save() error {
 		return apperror.NewError("creating configuration directory failed").AddError(err)
 	}
 
-	path, err := filepath.Abs(filepath.Join(flag.Path, configname+".yaml"))
+	path, err := filepath.Abs(filepath.Join(flag.Path, configName+".yaml"))
 	if err != nil {
 		return apperror.NewError("building absolute path of configuration file failed").AddError(err)
 	}
@@ -165,4 +122,20 @@ func save() error {
 	}
 
 	return nil
+}
+
+func flatten(data map[string]interface{}, prefix string) {
+	for key, value := range data {
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+
+		if nested, ok := value.(map[string]interface{}); ok {
+			flatten(nested, fullKey)
+			continue
+		}
+
+		values[strings.ToLower(fullKey)] = value
+	}
 }

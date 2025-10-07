@@ -13,26 +13,19 @@ func getValue(key string) interface{} {
 	defer mutex.RUnlock()
 
 	lowerKey := strings.ToLower(key)
-
-	// Priority: flag > env var > config file > default
-
-	// Check flag value first
 	if flag, exists := flags[lowerKey]; exists && flag.Changed {
 		return getFlagValue(flag)
 	}
 
-	// Check environment variable
-	envKey := getEnvKey(key)
+	envKey := getFlagKey(key)
 	if envVal := os.Getenv(envKey); envVal != "" {
 		return envVal
 	}
 
-	// Check config file values
 	if val, exists := values[lowerKey]; exists {
 		return val
 	}
 
-	// Return default value
 	if val, exists := defaults[lowerKey]; exists {
 		return val
 	}
@@ -40,7 +33,7 @@ func getValue(key string) interface{} {
 	return nil
 }
 
-func unmarshalConfig(target interface{}) error {
+func unmarshal(target interface{}) error {
 	mutex.RLock()
 	defer mutex.RUnlock()
 

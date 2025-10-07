@@ -101,16 +101,15 @@ var (
 	logger     = logging.GetPackageLogger("config")
 	mutex      = &sync.RWMutex{}
 	config     Config
-	configname string
-	onChange   []func(o Config, n Config) error
+	configName string
+	configPath string
 	lastChange atomic.Int64
-	envPrefix  string
+	prefix     string
 	defaults   map[string]interface{}
 	values     map[string]interface{}
 	flags      map[string]*pflag.Flag
+	onChange   []func(o Config, n Config) error
 	watcher    *fsnotify.Watcher
-	configPath string
-	configType string
 )
 
 func init() {
@@ -127,7 +126,7 @@ type Config interface {
 
 // Register registers a configuration struct and parses its tags
 // The name is used as the name of the configuration file and the prefix for the environment variables
-func Register(name string, c Config) error {
+func Register(path, name string, c Config) error {
 	if c == nil {
 		return apperror.NewError("the configuration provided is nil")
 	}
@@ -136,8 +135,11 @@ func Register(name string, c Config) error {
 		return apperror.NewErrorf("the configuration provided is not a pointer to a struct, got %T", c)
 	}
 
-	configname = name
-	setEnvPrefix(strings.ReplaceAll(configname, "-", "_"))
+	mutex.Lock()
+	configName = name
+	configPath = path
+	prefix = strings.ToUpper(strings.ReplaceAll(configName, "-", "_"))
+	mutex.Unlock()
 
 	err := parseStructTags(reflect.ValueOf(c), "")
 	if err != nil {
@@ -163,11 +165,10 @@ func Get() Config {
 // Read reads the configuration from the file, validates it and applies it
 // If the file does not exist, it creates a new one with the default values
 func Read() error {
-	setConfigName(configname)
-	setConfigType("yaml")
+	setConfigName(configName)
 	addConfigPath(flag.Path)
 
-	err := readInConfig()
+	err := read()
 	if err != nil {
 		err := os.MkdirAll(flag.Path, 0750)
 		if err != nil {
@@ -179,8 +180,7 @@ func Read() error {
 			return apperror.NewError("writing default configuration file failed").AddError(err)
 		}
 
-		// Retry reading the config file after creating it
-		err = readInConfig()
+		err = read()
 		if err != nil {
 			return apperror.NewError("reading configuration file after creation failed").AddError(err)
 		}
@@ -191,7 +191,7 @@ func Read() error {
 		return apperror.NewErrorf("creating new instance of %T failed", config)
 	}
 
-	err = unmarshalConfig(change)
+	err = unmarshal(change)
 	if err != nil {
 		return apperror.NewErrorf("unmarshalling configuration data in %T failed", config).AddError(err)
 	}
@@ -246,7 +246,7 @@ func Write(change Config) error {
 // It ignores changes that happen within 1 second of each other
 // This is to prevent multiple calls when the file is saved
 func Watch() {
-	err := watchConfig(func(_ fsnotify.Event) {
+	err := watch(func(_ fsnotify.Event) {
 		if time.Now().UnixMilli()-lastChange.Load() < 1000 {
 			return
 		}
@@ -262,16 +262,26 @@ func Watch() {
 	}
 }
 
-// Reset clears the global state of the config package
+// Reset clears the config package state
+// Everything must be re-registered after calling this function
 func Reset() {
 	mutex.Lock()
 	defer mutex.Unlock()
+
+	if watcher != nil {
+		watcher.Close()
+		watcher = nil
+	}
+
 	config = nil
-	configname = ""
+	configName = ""
+	configPath = ""
+	prefix = ""
+	defaults = make(map[string]interface{})
+	values = make(map[string]interface{})
+	flags = make(map[string]*pflag.Flag)
 	onChange = nil
 	lastChange.Store(0)
-
-	resetConfig()
 }
 
 // Changed checks if two configuration values are different by comparing their reflection values.
