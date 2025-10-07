@@ -65,6 +65,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +76,7 @@ import (
 	"github.com/valentin-kaiser/go-core/interruption"
 	"github.com/valentin-kaiser/go-core/logging"
 	"github.com/valentin-kaiser/go-core/security"
+	"github.com/valentin-kaiser/go-core/web/jrpc"
 	"github.com/valentin-kaiser/go-core/zlog"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
@@ -454,6 +456,27 @@ func (s *Server) WithWebsocket(path string, handler func(http.ResponseWriter, *h
 		handler(w, r, conn)
 	})
 
+	return s
+}
+
+func (s *Server) WithJRPC(path string, service *jrpc.Service) *Server {
+	if s.Error != nil {
+		return s
+	}
+
+	path = strings.TrimSuffix(path, "/") + "/{service}/{method}"
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if _, ok := s.handler[path]; ok {
+		s.Error = apperror.NewErrorf("path %s is already registered as a handler", path)
+		return s
+	}
+	if _, ok := s.websockets[path]; ok {
+		s.Error = apperror.NewErrorf("path %s is already registered as a websocket", path)
+		return s
+	}
+	s.handler[path] = http.HandlerFunc(service.HandlerFunc)
+	s.router.HandleFunc(path, service.HandlerFunc)
 	return s
 }
 

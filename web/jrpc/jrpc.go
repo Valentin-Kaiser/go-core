@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -18,6 +19,13 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
+
+// upgrader is the WebSocket upgrader with default options
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow connections from any origin
+	},
+}
 
 // ContextKey represents keys for context values
 type ContextKey string
@@ -50,7 +58,49 @@ func New(s Server) *Service {
 	return &Service{Server: s}
 }
 
-// Handle processes HTTP POST requests to API endpoints.
+// SetUpgrader allows setting a custom WebSocket upgrader with specific options.
+func SetUpgrader(u websocket.Upgrader) {
+	upgrader = u
+}
+
+// HandlerFunc processes both HTTP and WebSocket requests to API endpoints.
+// It automatically detects whether the request is a WebSocket upgrade request
+// and routes to the appropriate handler (unary or websocket).
+//
+// URL format: /{service}/{method}
+// Content-Type: application/json (Protocol Buffer JSON format)
+//
+// For WebSocket requests, the Connection header must contain "Upgrade" and
+// the Upgrade header must contain "websocket".
+//
+// Parameters:
+//   - w: HTTP ResponseWriter for sending the response
+//   - r: HTTP Request containing the API call
+func (s *Service) HandlerFunc(w http.ResponseWriter, r *http.Request) {
+	if s.isWebSocketRequest(r) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to upgrade connection to websocket")
+			http.Error(w, "Failed to upgrade to WebSocket", http.StatusBadRequest)
+			return
+		}
+		defer conn.Close()
+
+		s.websocket(w, r, conn)
+		return
+	}
+
+	s.unary(w, r)
+}
+
+// isWebSocketRequest checks if the HTTP request is requesting a WebSocket upgrade
+func (s *Service) isWebSocketRequest(r *http.Request) bool {
+	connection := strings.ToLower(r.Header.Get("Connection"))
+	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
+	return strings.Contains(connection, "upgrade") && upgrade == "websocket"
+}
+
+// unary processes HTTP POST requests to API endpoints.
 // It performs method resolution, request validation, message unmarshaling,
 // method invocation, and response marshaling. The context is enriched with
 // HTTP components for use by service methods.
@@ -61,7 +111,7 @@ func New(s Server) *Service {
 // Parameters:
 //   - w: HTTP ResponseWriter for sending the response
 //   - r: HTTP Request containing the API call
-func (s *Service) Handle(w http.ResponseWriter, r *http.Request) {
+func (s *Service) unary(w http.ResponseWriter, r *http.Request) {
 	ctx := WithHTTPContext(r.Context(), w, r)
 
 	service := r.PathValue("service")
@@ -112,7 +162,7 @@ func (s *Service) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleWebsocket processes WebSocket connections for streaming API endpoints.
+// websocket processes WebSocket connections for streaming API endpoints.
 // It validates method signatures against protocol buffer definitions, determines
 // the streaming pattern (bidirectional, server-side, or client-side), and routes
 // to the appropriate handler. The context is enriched with both HTTP and WebSocket
@@ -127,7 +177,7 @@ func (s *Service) Handle(w http.ResponseWriter, r *http.Request) {
 //   - w: HTTP ResponseWriter from the WebSocket upgrade
 //   - r: HTTP Request from the WebSocket upgrade
 //   - conn: Established WebSocket connection
-func (s *Service) HandleWebsocket(w http.ResponseWriter, r *http.Request, conn *websocket.Conn) {
+func (s *Service) websocket(w http.ResponseWriter, r *http.Request, conn *websocket.Conn) {
 	service := r.PathValue("service")
 	method := r.PathValue("method")
 
@@ -152,11 +202,11 @@ func (s *Service) HandleWebsocket(w http.ResponseWriter, r *http.Request, conn *
 
 	switch streamingType {
 	case StreamingTypeBidirectional:
-		s.handleBidirectionalStream(r.Context(), conn, m, mt)
+		s.handleBidirectionalStream(WithWebSocketContext(r.Context(), w, r, conn), conn, m, mt)
 	case StreamingTypeServerStream:
-		s.handleServerStream(r.Context(), conn, m, mt, md)
+		s.handleServerStream(WithWebSocketContext(r.Context(), w, r, conn), conn, m, mt, md)
 	case StreamingTypeClientStream:
-		s.handleClientStream(r.Context(), conn, m, mt)
+		s.handleClientStream(WithWebSocketContext(r.Context(), w, r, conn), conn, m, mt)
 	case StreamingTypeUnary:
 		s.closeWS(conn, websocket.CloseInternalServerErr, "unary methods are not supported over WebSocket")
 	default:
@@ -190,7 +240,7 @@ func WithHTTPContext(ctx context.Context, w http.ResponseWriter, r *http.Request
 //   - conn: The WebSocket connection for the current session
 //
 // Returns the enriched context containing the WebSocket connection.
-func WithWebSocketContext(ctx context.Context, conn *websocket.Conn) context.Context {
+func WithWebSocketContext(ctx context.Context, w http.ResponseWriter, r *http.Request, conn *websocket.Conn) context.Context {
 	return context.WithValue(ctx, ContextKeyWebSocketConn, conn)
 }
 
@@ -617,6 +667,12 @@ func (s *Service) startMessageWriter(ctx context.Context, conn *websocket.Conn, 
 	go func() {
 		defer close(write)
 		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			val, ok := outChan.Recv()
 			if !ok {
 				return
