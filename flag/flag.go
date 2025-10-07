@@ -39,7 +39,6 @@ package flag
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 
 	"github.com/spf13/pflag"
@@ -57,7 +56,7 @@ var (
 )
 
 func init() {
-	pflag.StringVar(&Path, "path", "./data", "Sets the application default path")
+	pflag.StringVar(&Path, "path", "./", "Sets the application working directory")
 	pflag.BoolVar(&Help, "help", false, "Prints the help page")
 	pflag.BoolVar(&Version, "version", false, "Prints the software version")
 	pflag.BoolVar(&Debug, "debug", false, "Enables debug mode")
@@ -67,15 +66,9 @@ func init() {
 // It should be called in the main package of the application
 func Init() {
 	pflag.Parse()
-
-	if Help {
-		Print()
-		os.Exit(0)
-	}
 }
 
-// Print prints the help page and the default values of the flags
-func Print() {
+func PrintHelp() {
 	fmt.Println("Usage:")
 	pflag.PrintDefaults()
 }

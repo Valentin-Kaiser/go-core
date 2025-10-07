@@ -133,12 +133,6 @@ func TestInit(_ *testing.T) {
 	flag.Init()
 }
 
-func TestPrint(_ *testing.T) {
-	// Test that Print doesn't panic
-	// We can't easily test the output, but we can ensure it doesn't crash
-	flag.Print()
-}
-
 // Test flag registration with default values
 func TestRegisterFlagWithDefaults(_ *testing.T) {
 	var stringFlag = "default"

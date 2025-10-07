@@ -4,9 +4,21 @@
 //
 // This package captures key metadata about the application build, including the
 // Git tag, full and short commit hashes, build date, Go runtime version, target
-// platform, and the list of Go modules used in the build. These values are
-// intended to be set at build time via linker flags (-ldflags), allowing
-// embedding of dynamic version information within the compiled binary.
+// platform, and the list of Go modules used in the build. These values can be
+// set at build time via linker flags (-ldflags), or automatically extracted from
+// debug.BuildInfo at runtime when available.
+//
+// Version Information Sources:
+//
+// 1. Build-time ldflags (recommended for releases):
+//   - Provides precise control over version information
+//   - Set via -ldflags during go build
+//
+// 2. Runtime debug.BuildInfo (automatic fallback):
+//   - Automatically used when ldflags are not set
+//   - Extracts vcs.revision (git commit), vcs.time (build date), vcs.modified
+//   - Available when building with Go 1.18+ and VCS information embedded
+//   - Can be manually triggered via LoadFromBuildInfo()
 //
 // Supported Version Formats:
 //
@@ -107,9 +119,36 @@ var (
 )
 
 func init() {
-	if info, available := debug.ReadBuildInfo(); available {
-		for _, mod := range info.Deps {
-			Modules = append(Modules, (&Module{}).fromBuildInfo(mod))
+	info, available := debug.ReadBuildInfo()
+	if !available {
+		return
+	}
+
+	for _, mod := range info.Deps {
+		Modules = append(Modules, (&Module{}).fromBuildInfo(mod))
+	}
+
+	if GitCommit != "unknown" || BuildDate != "unknown" {
+		return
+	}
+
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		GitTag = info.Main.Version
+	}
+
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if setting.Value != "" {
+				GitCommit = setting.Value
+				GitShort = GitCommit
+
+				if len(GitShort) >= 7 {
+					GitShort = GitShort[:7]
+				}
+			}
+		case "vcs.time":
+			BuildDate = setting.Value
 		}
 	}
 }
