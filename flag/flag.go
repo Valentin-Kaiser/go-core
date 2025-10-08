@@ -16,6 +16,8 @@
 //
 // Additional flags can be registered using `RegisterFlag`, which accepts the flag
 // name, a pointer to the variable to populate, and a usage description.
+// Existing flags can be overridden using `Override`, which allows changing the
+// variable, default value, and description of an already registered flag.
 // Supported types include strings, booleans, integers, unsigned integers, and floats.
 //
 // Example:
@@ -31,14 +33,21 @@
 //
 //	func main() {
 //		flag.RegisterFlag("custom", &CustomFlag, "A custom flag for demonstration")
+//
+//		// Override the default path flag
+//		flag.Path = "/new/default/path"
+//		flag.Override("path", &flag.Path, "Updated application working directory")
+//
 //		flag.Init()
 //
 //		fmt.Println("Custom Flag Value:", CustomFlag)
+//		fmt.Println("Path:", flag.Path)
 //	}
 package flag
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 
 	"github.com/spf13/pflag"
@@ -56,7 +65,7 @@ var (
 )
 
 func init() {
-	pflag.StringVar(&Path, "path", "./", "Sets the application working directory")
+	pflag.StringVar(&Path, "path", "./data", "Sets the application working directory")
 	pflag.BoolVar(&Help, "help", false, "Prints the help page")
 	pflag.BoolVar(&Version, "version", false, "Prints the software version")
 	pflag.BoolVar(&Debug, "debug", false, "Enables debug mode")
@@ -68,8 +77,9 @@ func Init() {
 	pflag.Parse()
 }
 
+// PrintHelp prints the help message to standard error output
 func PrintHelp() {
-	fmt.Println("Usage:")
+	fmt.Fprintln(os.Stderr, "Usage:")
 	pflag.PrintDefaults()
 }
 
@@ -121,4 +131,70 @@ func RegisterFlag(name string, value interface{}, usage string) {
 	default:
 		panic(fmt.Sprintf("unsupported type %T", v))
 	}
+}
+
+// Override allows changing an existing flag's variable, default value and description
+// It panics if the flag is not already registered or if the value is not a pointer
+// Note: The flag must not have been parsed yet for this to work properly
+func Override(name string, value interface{}, usage string) {
+	if pflag.Lookup(name) == nil {
+		panic(fmt.Sprintf("flag %s is not registered", name))
+	}
+
+	val := reflect.ValueOf(value)
+	if val.Kind() != reflect.Ptr {
+		panic(fmt.Sprintf("flag %s value must be a pointer", name))
+	}
+
+	if val.IsNil() {
+		panic(fmt.Sprintf("flag %s value must not be nil", name))
+	}
+
+	if pflag.Parsed() {
+		panic(fmt.Sprintf("cannot override flag %s after flags have been parsed", name))
+	}
+
+	newCommandLine := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// Copy all flags except the one we're overriding
+	pflag.CommandLine.VisitAll(func(flag *pflag.Flag) {
+		if flag.Name != name {
+			newCommandLine.AddFlag(flag)
+		}
+	})
+
+	switch v := value.(type) {
+	case *string:
+		newCommandLine.StringVar(v, name, *v, usage)
+	case *bool:
+		newCommandLine.BoolVar(v, name, *v, usage)
+	case *int:
+		newCommandLine.IntVar(v, name, *v, usage)
+	case *int8:
+		newCommandLine.Int8Var(v, name, *v, usage)
+	case *int16:
+		newCommandLine.Int16Var(v, name, *v, usage)
+	case *int32:
+		newCommandLine.Int32Var(v, name, *v, usage)
+	case *int64:
+		newCommandLine.Int64Var(v, name, *v, usage)
+	case *uint:
+		newCommandLine.UintVar(v, name, *v, usage)
+	case *uint8:
+		newCommandLine.Uint8Var(v, name, *v, usage)
+	case *uint16:
+		newCommandLine.Uint16Var(v, name, *v, usage)
+	case *uint32:
+		newCommandLine.Uint32Var(v, name, *v, usage)
+	case *uint64:
+		newCommandLine.Uint64Var(v, name, *v, usage)
+	case *float32:
+		newCommandLine.Float32Var(v, name, *v, usage)
+	case *float64:
+		newCommandLine.Float64Var(v, name, *v, usage)
+	default:
+		panic(fmt.Sprintf("unsupported type %T", v))
+	}
+
+	pflag.CommandLine = newCommandLine
 }

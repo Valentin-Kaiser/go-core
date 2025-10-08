@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/valentin-kaiser/go-core/flag"
 )
 
@@ -184,4 +185,141 @@ func TestFlagBinding(_ *testing.T) {
 
 	// This mainly tests that the function completes without error
 	// Actual binding verification would require more complex setup
+}
+
+func TestOverrideFlag(t *testing.T) {
+	// Save and restore the original command line
+	originalCommandLine := pflag.CommandLine
+	defer func() { pflag.CommandLine = originalCommandLine }()
+
+	// Create a fresh command line for this test
+	pflag.CommandLine = pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// First register a flag
+	var originalFlag string = "original"
+	flag.RegisterFlag("override-test", &originalFlag, "Original description")
+
+	// Override it with new variable, value and description
+	var newFlag string = "new_default"
+	flag.Override("override-test", &newFlag, "New description")
+
+	// Test that the flag was overridden
+	overriddenFlag := pflag.Lookup("override-test")
+	if overriddenFlag == nil {
+		t.Error("Expected overridden flag to exist")
+		return
+	}
+
+	if overriddenFlag.Usage != "New description" {
+		t.Errorf("Expected usage to be 'New description', got '%s'", overriddenFlag.Usage)
+	}
+
+	if overriddenFlag.DefValue != "new_default" {
+		t.Errorf("Expected default value to be 'new_default', got '%s'", overriddenFlag.DefValue)
+	}
+}
+
+func TestOverrideFlagPanics(t *testing.T) {
+	// Save and restore the original command line
+	originalCommandLine := pflag.CommandLine
+	defer func() { pflag.CommandLine = originalCommandLine }()
+
+	// Create a fresh command line for this test
+	pflag.CommandLine = pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// Test that overriding a non-existent flag panics
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic when overriding non-existent flag")
+		}
+	}()
+	var testFlag string
+	flag.Override("non-existent-flag", &testFlag, "A non-existent flag")
+}
+
+func TestOverrideFlagNonPointer(t *testing.T) {
+	// Save and restore the original command line
+	originalCommandLine := pflag.CommandLine
+	defer func() { pflag.CommandLine = originalCommandLine }()
+
+	// Create a fresh command line for this test
+	pflag.CommandLine = pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// First register a flag to override
+	var originalFlag string
+	flag.RegisterFlag("override-non-pointer", &originalFlag, "Original flag")
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic when overriding with non-pointer value")
+		}
+	}()
+	var testFlag string
+	flag.Override("override-non-pointer", testFlag, "A non-pointer override")
+}
+
+func TestOverrideFlagNilPointer(t *testing.T) {
+	// Save and restore the original command line
+	originalCommandLine := pflag.CommandLine
+	defer func() { pflag.CommandLine = originalCommandLine }()
+
+	// Create a fresh command line for this test
+	pflag.CommandLine = pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// First register a flag to override
+	var originalFlag string
+	flag.RegisterFlag("override-nil-pointer", &originalFlag, "Original flag")
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic when overriding with nil pointer")
+		}
+	}()
+	var testFlag *string
+	flag.Override("override-nil-pointer", testFlag, "A nil pointer override")
+}
+
+func TestOverrideFlagAfterParse(t *testing.T) {
+	// Save and restore the original command line
+	originalCommandLine := pflag.CommandLine
+	defer func() { pflag.CommandLine = originalCommandLine }()
+
+	// Create a fresh command line for this test
+	pflag.CommandLine = pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// Register a flag and parse
+	var originalFlag string
+	flag.RegisterFlag("override-after-parse", &originalFlag, "Original flag")
+	flag.Init() // This will parse the flags
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic when overriding after parsing")
+		}
+	}()
+
+	// Try to override after parsing - should panic
+	var newFlag string = "new"
+	flag.Override("override-after-parse", &newFlag, "New description")
+}
+
+func TestOverrideUnsupportedType(t *testing.T) {
+	// Save and restore the original command line
+	originalCommandLine := pflag.CommandLine
+	defer func() { pflag.CommandLine = originalCommandLine }()
+
+	// Create a fresh command line for this test
+	pflag.CommandLine = pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// First register a flag to override
+	var originalFlag string
+	flag.RegisterFlag("override-unsupported", &originalFlag, "Original flag")
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Expected panic when overriding with unsupported type")
+		}
+	}()
+	var testSlice []string
+	flag.Override("override-unsupported", &testSlice, "An unsupported type override")
 }
