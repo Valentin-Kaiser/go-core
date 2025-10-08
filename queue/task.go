@@ -582,7 +582,9 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 				Field("task_name", task.Name).
 				Msg("failed to update next run time before execution")
 		}
-	} else {
+	}
+
+	if !task.AllowConcurrent {
 		task.mutex.Lock()
 		task.IsRunning = true
 		task.UpdatedAt = time.Now()
@@ -644,7 +646,9 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 				nextRunTime = task.NextRun
 				runCount = task.RunCount
 				task.mutex.RUnlock()
-			} else {
+			}
+
+			if task.AllowConcurrent {
 				nextRunTime = task.NextRun
 				runCount = task.RunCount
 				task.mutex.Unlock()
@@ -708,7 +712,9 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		task.mutex.RLock()
 		nextRunTime = task.NextRun
 		task.mutex.RUnlock()
-	} else {
+	}
+
+	if task.AllowConcurrent {
 		nextRunTime = task.NextRun
 		task.mutex.Unlock()
 	}
