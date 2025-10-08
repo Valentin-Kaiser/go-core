@@ -11,7 +11,7 @@
 //
 // Features:
 //   - HTTP and WebSocket endpoint support
-//   - Automatic method resolution and dispatch
+//   - Automatic method resolution and dispatch with cached lookups
 //   - Protocol Buffer JSON marshaling/unmarshaling
 //   - Multiple streaming patterns (unary, server, client, bidirectional)
 //   - Context enrichment with HTTP and WebSocket components
@@ -21,7 +21,7 @@
 //  1. Define your service in a .proto file
 //  2. Generate Go code using protoc with the protoc-gen-jrpc plugin
 //  3. Implement the generated Server interface
-//  4. Create a new jRPC service with jrpc.New(yourServer)
+//  4. Create a new jRPC service with jrpc.Register(yourServer)
 //  5. Register the HandlerFunc with the web package function WithJRPC
 //
 // Example:
@@ -50,7 +50,7 @@
 //	      err := web.Instance().
 //	          WithHost("localhost").
 //	          WithPort(8080).
-//	          WithJRPC(jrpc.New(&MyService{})).
+//	          WithJRPC(jrpc.Register(&MyService{})).
 //	          Start().Error
 //	      if err != nil {
 //	          log.Fatal().Err(err).Msg("server exited")
@@ -103,6 +103,7 @@ const (
 // protocol buffer message handling, and context enrichment.
 type Service struct {
 	Server
+	methods map[string]protoreflect.MethodDescriptor // cached method descriptors for faster lookup
 }
 
 // Server represents a jRPC service implementation.
@@ -111,10 +112,29 @@ type Server interface {
 	Descriptor() protoreflect.FileDescriptor
 }
 
-// New creates a new jrpc service instance and registers the provided
+// Register creates a new jrpc service instance and registers the provided
 // service implementation. The service implementation has to implement the Descriptor method.
-func New(s Server) *Service {
-	return &Service{Server: s}
+// This function builds a method cache for improved lookup performance.
+func Register(s Server) *Service {
+	service := &Service{
+		Server:  s,
+		methods: make(map[string]protoreflect.MethodDescriptor),
+	}
+
+	// Build the methods cache
+	services := s.Descriptor().Services()
+	for i := 0; i < services.Len(); i++ {
+		serviceDesc := services.Get(i)
+		methods := serviceDesc.Methods()
+		for j := 0; j < methods.Len(); j++ {
+			methodDesc := methods.Get(j)
+			// Use fully qualified method name as key: service.method
+			key := string(serviceDesc.Name()) + "." + string(methodDesc.Name())
+			service.methods[key] = methodDesc
+		}
+	}
+
+	return service
 }
 
 // SetUpgrader allows setting a custom WebSocket upgrader with specific options.
@@ -404,6 +424,13 @@ func (s *Service) call(ctx context.Context, method string, req proto.Message) (a
 }
 
 func (s *Service) find(service, method string) (protoreflect.MethodDescriptor, error) {
+	// Use cached method lookup for better performance
+	key := service + "." + method
+	if md, exists := s.methods[key]; exists {
+		return md, nil
+	}
+
+	// Fallback to dynamic lookup if not found in cache (should not happen in normal operation)
 	sd := s.Descriptor().Services().ByName(protoreflect.Name(service))
 	if sd == nil {
 		return nil, apperror.NewError("service not found")
