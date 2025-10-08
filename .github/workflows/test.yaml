@@ -34,7 +34,10 @@ jobs:
         run: go build -v ./...
 
       - name: Run tests
-        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          # Exclude machine package on Linux as it requires hardware access not available in CI
+          packages=$(go list ./... | grep -v '/machine$')
+          go test -race -coverprofile=coverage.out -covermode=atomic $packages
 
       - name: Run go vet
         run: go vet ./...
@@ -63,7 +66,10 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test -v ./...
+        run: |
+          # Exclude machine package on Windows as it requires hardware access not available in CI
+          $packages = go list ./... | Where-Object { $_ -notmatch '/machine$' }
+          go test -v $packages
 
   test-macos:
     name: Test on macOS
@@ -81,4 +87,7 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test -v ./...
+        run: |
+          # Exclude machine package on macOS as it requires hardware access not available in CI
+          packages=$(go list ./... | grep -v '/machine$')
+          go test -v $packages
