@@ -20,8 +20,8 @@
 //		"context"
 //		"time"
 //
-//		"github.com/Valentin-Kaiser/go-core/mail"
-//		"github.com/Valentin-Kaiser/go-core/queue"
+//		"github.com/valentin-kaiser/go-core/mail"
+//		"github.com/valentin-kaiser/go-core/queue"
 //	)
 //
 //	func main() {
@@ -106,11 +106,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/queue"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/queue"
 )
+
+var logger = logging.GetPackageLogger("mail")
 
 // Manager manages email sending and SMTP server functionality
 type Manager struct {
@@ -127,7 +129,23 @@ type Manager struct {
 	wg              sync.WaitGroup
 }
 
-// NewManager creates a new mail manager
+// NewManager creates a new mail manager with the specified configuration and queue manager.
+// The mail manager handles email sending operations, template processing, and integrates
+// with a queue system for asynchronous email delivery. It sets up SMTP senders,
+// template managers, and provides features like retry logic, delivery tracking, and statistics.
+//
+// Example usage:
+//
+//	config := &mail.Config{
+//		Client: mail.ClientConfig{
+//			Host:     "smtp.gmail.com",
+//			Port:     587,
+//			Username: "your-email@gmail.com",
+//			Password: "your-password",
+//		},
+//	}
+//	queueMgr := queue.NewManager()
+//	mailMgr := mail.NewManager(config, queueMgr)
 func NewManager(config *Config, queueManager *queue.Manager) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -156,6 +174,11 @@ func (m *Manager) Start(_ context.Context) error {
 	}
 
 	if m.config.Queue.Enabled && m.queueManager != nil {
+		err := m.queueManager.Start(m.ctx)
+		if err != nil {
+			atomic.StoreInt32(&m.running, 0)
+			return apperror.Wrap(err)
+		}
 		m.queueManager.RegisterHandler("mail", m.handleMailJob)
 	}
 
@@ -164,9 +187,11 @@ func (m *Manager) Start(_ context.Context) error {
 		go func() {
 			defer m.wg.Done()
 			if err := m.server.Start(m.ctx); err != nil {
-				log.Error().Err(err).Msg("[Mail] Failed to start SMTP server")
+				logger.Error().Err(err).Msg("failed to start SMTP server")
 			}
 		}()
+
+		logger.Info().Msgf("SMTP server started on %s:%d", m.config.Server.Host, m.config.Server.Port)
 	}
 
 	return nil
@@ -181,7 +206,13 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.cancel()
 	if m.server != nil && m.server.IsRunning() {
 		if err := m.server.Stop(ctx); err != nil {
-			log.Error().Err(err).Msg("[Mail] Failed to stop SMTP server")
+			logger.Error().Err(err).Msg("failed to stop SMTP server")
+		}
+	}
+
+	if m.config.Queue.Enabled && m.queueManager != nil {
+		if err := m.queueManager.Stop(); err != nil {
+			logger.Error().Err(err).Msg("failed to stop queue manager")
 		}
 	}
 
@@ -195,7 +226,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		log.Warn().Msg("[Mail] Mail manager stop timed out")
+		logger.Warn().Msg("mail manager stop timed out")
 		return ctx.Err()
 	}
 }
@@ -211,11 +242,11 @@ func (m *Manager) Send(ctx context.Context, message *Message) error {
 		message.ID = uuid.New().String()
 	}
 
-	log.Debug().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
-		Msg("[Mail] Sending email")
+	logger.Debug().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
+		Msg("sending email")
 
 	// Send the message
 	err := m.sender.Send(ctx, message)
@@ -227,11 +258,11 @@ func (m *Manager) Send(ctx context.Context, message *Message) error {
 	m.incrementSentCount()
 	m.updateLastSent()
 
-	log.Info().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
-		Msg("[Mail] Email sent successfully")
+	logger.Info().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
+		Msg("email sent successfully")
 
 	return nil
 }
@@ -251,11 +282,11 @@ func (m *Manager) SendAsync(ctx context.Context, message *Message) error {
 		message.ID = uuid.New().String()
 	}
 
-	log.Debug().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
-		Msg("[Mail] Queuing email for async sending")
+	logger.Debug().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
+		Msg("queuing email for async sending")
 
 	// Create queue job
 	jobData := map[string]interface{}{
@@ -296,11 +327,11 @@ func (m *Manager) SendAsync(ctx context.Context, message *Message) error {
 
 	m.incrementQueuedCount()
 
-	log.Info().
-		Str("id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
-		Msg("[Mail] Email queued for async sending")
+	logger.Debug().
+		Field("id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
+		Msg("email queued for async sending")
 
 	return nil
 }
@@ -361,9 +392,7 @@ func (m *Manager) SendTestEmail(ctx context.Context, to string) error {
 
 // handleMailJob handles queued mail jobs
 func (m *Manager) handleMailJob(ctx context.Context, job *queue.Job) error {
-	log.Debug().
-		Str("job_id", job.ID).
-		Msg("[Mail] Processing mail job")
+	logger.Debug().Field("job_id", job.ID).Msg("processing mail job")
 
 	// Decode the message from job payload
 	var jobData map[string]interface{}
@@ -384,12 +413,12 @@ func (m *Manager) handleMailJob(ctx context.Context, job *queue.Job) error {
 	m.updateLastSent()
 	m.decrementQueuedCount()
 
-	log.Info().
-		Str("job_id", job.ID).
-		Str("message_id", message.ID).
-		Str("subject", message.Subject).
-		Strs("to", message.To).
-		Msg("[Mail] Queued email sent successfully")
+	logger.Info().
+		Field("job_id", job.ID).
+		Field("message_id", message.ID).
+		Field("subject", message.Subject).
+		Field("to", message.To).
+		Msg("queued email sent successfully")
 
 	return nil
 }
@@ -535,6 +564,22 @@ func (m *Manager) WithFS(filesystem fs.FS) *Manager {
 func (m *Manager) WithFileServer(templatesPath string) *Manager {
 	if m.TemplateManager != nil {
 		m.TemplateManager.WithFileServer(templatesPath)
+	}
+	return m
+}
+
+// WithTemplateFunc adds a template function to the template manager
+func (m *Manager) WithTemplateFunc(key string, fn interface{}) *Manager {
+	if m.TemplateManager != nil {
+		m.TemplateManager.WithTemplateFunc(key, fn)
+	}
+	return m
+}
+
+// WithDefaultFuncs adds default template functions to the template manager
+func (m *Manager) WithDefaultFuncs() *Manager {
+	if m.TemplateManager != nil {
+		m.TemplateManager.WithDefaultFuncs()
 	}
 	return m
 }

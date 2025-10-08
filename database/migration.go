@@ -3,8 +3,8 @@ package database
 import (
 	"sync"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/version"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/version"
 	"gorm.io/gorm"
 )
 

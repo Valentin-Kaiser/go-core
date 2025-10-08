@@ -5,13 +5,14 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/config"
 )
 
 // Config holds the configuration for the mail package
 type Config struct {
 	// SMTP Client Configuration
-	Client ClientConfig `yaml:"smtp" json:"smtp"`
+	Client ClientConfig `yaml:"client" json:"client"`
 	// SMTP Server Configuration
 	Server ServerConfig `yaml:"server" json:"server"`
 	// Queue Configuration
@@ -22,6 +23,7 @@ type Config struct {
 
 // ClientConfig holds the SMTP client configuration for sending emails
 type ClientConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
 	// Host is the SMTP server hostname
 	Host string `yaml:"host" json:"host"`
 	// Port is the SMTP server port
@@ -132,6 +134,8 @@ type QueueConfig struct {
 
 // TemplateConfig holds the template configuration
 type TemplateConfig struct {
+	// Enabled indicates if template processing is enabled
+	Enabled bool `yaml:"enabled" json:"enabled"`
 	// DefaultTemplate is the name of the default template
 	DefaultTemplate string `yaml:"default_template" json:"default_template"`
 	// AutoReload indicates if templates should be reloaded on change
@@ -211,6 +215,9 @@ func (c *ClientConfig) TLSConfig() *tls.Config {
 
 // Validate checks the client configuration for errors
 func (c *ClientConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
 	if c.Host == "" {
 		return apperror.NewError("SMTP host is required")
 	}
@@ -260,22 +267,26 @@ func (c *ServerConfig) Validate() error {
 
 // Validate checks the queue configuration for errors
 func (c *QueueConfig) Validate() error {
-	if c.QueueName == "" {
-		return apperror.NewError("Queue name is required")
-	}
-	if c.MaxAttempts <= 0 {
-		return apperror.NewError("Max attempts must be greater than 0")
-	}
-	if c.JobTimeout <= 0 {
-		return apperror.NewError("Job timeout must be greater than 0")
+	if c.Enabled {
+		if c.QueueName == "" {
+			return apperror.NewError("Queue name is required")
+		}
+		if c.MaxAttempts <= 0 {
+			return apperror.NewError("Max attempts must be greater than 0")
+		}
+		if c.JobTimeout <= 0 {
+			return apperror.NewError("Job timeout must be greater than 0")
+		}
 	}
 	return nil
 }
 
 // Validate checks the template configuration for errors
 func (c *TemplateConfig) Validate() error {
-	if c.DefaultTemplate == "" {
-		return apperror.NewError("Default template is required")
+	if c.Enabled {
+		if c.DefaultTemplate == "" {
+			return apperror.NewError("Default template is required")
+		}
 	}
 	return nil
 }
@@ -295,4 +306,29 @@ func (c *Config) Validate() error {
 		return apperror.Wrap(err)
 	}
 	return nil
+}
+
+// Changed checks if the mail configuration has changed compared to another configuration.
+func (c *Config) Changed(n *Config) bool {
+	return config.Changed(c, n)
+}
+
+// Changed checks if the client configuration has changed compared to another configuration.
+func (c *ClientConfig) Changed(n *ClientConfig) bool {
+	return config.Changed(c, n)
+}
+
+// Changed checks if the server configuration has changed compared to another configuration.
+func (c *ServerConfig) Changed(n *ServerConfig) bool {
+	return config.Changed(c, n)
+}
+
+// Changed checks if the queue configuration has changed compared to another configuration.
+func (c *QueueConfig) Changed(n *QueueConfig) bool {
+	return config.Changed(c, n)
+}
+
+// Changed checks if the template configuration has changed compared to another configuration.
+func (c *TemplateConfig) Changed(n *TemplateConfig) bool {
+	return config.Changed(c, n)
 }

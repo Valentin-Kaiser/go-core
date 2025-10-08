@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"time"
 )
 
 // ResponseWriter is a wrapper around http.ResponseWriter that captures the status code
@@ -20,8 +21,10 @@ type ResponseWriter struct {
 	history [][]byte
 	// header is a custom header map to hold response headers
 	header http.Header
-
-	hijacked bool // hijacked indicates if the connection has been hijacked
+	// hijacked indicates if the connection has been hijacked
+	hijacked bool
+	// start is the time when the response writer was created
+	start time.Time
 }
 
 func newResponseWriter(w http.ResponseWriter, r *http.Request) *ResponseWriter {
@@ -32,6 +35,7 @@ func newResponseWriter(w http.ResponseWriter, r *http.Request) *ResponseWriter {
 		header:  make(http.Header),
 		buf:     bytes.Buffer{},
 		history: make([][]byte, 0),
+		start:   time.Now(),
 	}
 }
 

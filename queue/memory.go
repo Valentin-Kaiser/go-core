@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // MemoryQueue implements an in-memory job queue with priority support

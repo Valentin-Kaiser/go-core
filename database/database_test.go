@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/database"
-	"github.com/Valentin-Kaiser/go-core/version"
+	"github.com/valentin-kaiser/go-core/database"
+	"github.com/valentin-kaiser/go-core/version"
 	"gorm.io/gorm"
 )
 

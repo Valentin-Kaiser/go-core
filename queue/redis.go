@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/redis/go-redis/v9"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // RedisQueue implements a Redis-backed job queue

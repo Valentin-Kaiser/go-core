@@ -24,7 +24,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 const (
@@ -708,7 +708,8 @@ func writeMessage(buf io.Writer, msg []byte, multipart bool, mediaType string, w
 			"Content-Type":              {mediaType + "; charset=UTF-8"},
 			"Content-Transfer-Encoding": {"quoted-printable"},
 		}
-		if _, err := w.CreatePart(header); err != nil {
+		_, err := w.CreatePart(header)
+		if err != nil {
 			return apperror.Wrap(err)
 		}
 	}

@@ -3,6 +3,7 @@ package mail_test
 import (
 	"context"
 	"fmt"
+	"html/template"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/mail"
-	"github.com/Valentin-Kaiser/go-core/queue"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/mail"
+	"github.com/valentin-kaiser/go-core/queue"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -370,17 +371,13 @@ func TestManagerSendAsync(t *testing.T) {
 
 	queueManager := queue.NewManager()
 
-	// Start queue manager first
-	err := queueManager.Start(context.Background())
-	if err != nil {
-		t.Fatalf("Failed to start queue manager: %v", err)
-	}
-	defer queueManager.Stop()
-
 	manager := mail.NewManager(config, queueManager)
 
-	// Start manager
-	_ = manager.Start(context.Background())
+	// Start manager (this will automatically start the queue manager)
+	err := manager.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Failed to start mail manager: %v", err)
+	}
 	defer manager.Stop(context.Background())
 
 	message, _ := mail.NewMessage().
@@ -428,7 +425,7 @@ func TestManagerAddNotificationHandler(_ *testing.T) {
 	config := mail.DefaultConfig()
 	manager := mail.NewManager(config, nil)
 
-	handler := func(_ context.Context, _ string, to []string, _ io.Reader) error {
+	handler := func(_ context.Context, _ string, _ []string, _ io.Reader) error {
 		return nil
 	}
 
@@ -706,6 +703,20 @@ func TestManagerTemplateConfiguration(t *testing.T) {
 		t.Error("Expected WithFS to return same manager instance")
 	}
 
+	// Test WithTemplateFunc method
+	result = manager.WithTemplateFunc("testFunc", func(s string) string {
+		return "test_" + s
+	})
+	if result != manager {
+		t.Error("Expected WithTemplateFunc to return same manager instance")
+	}
+
+	// Test WithDefaultFuncs method
+	result = manager.WithDefaultFuncs()
+	if result != manager {
+		t.Error("Expected WithDefaultFuncs to return same manager instance")
+	}
+
 	// Test GetTemplateManager method
 	tm := manager.TemplateManager
 	if tm == nil {
@@ -777,5 +788,302 @@ func TestFormatDateTemplateFunction(t *testing.T) {
 	expected = "2023-12-25 10:30:00"
 	if result != expected {
 		t.Errorf("Expected default formatted date %s, got %s", expected, result)
+	}
+}
+
+// TestManagerTemplateFunctions tests the manager's template function integration
+func TestManagerTemplateFunctions(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a template that uses both custom and default functions
+	templateContent := `<html><body>
+<h1>{{.Subject}}</h1>
+<p>Custom: {{customUpper .Name}}</p>
+<p>Default: {{upper .Name}}</p>
+<p>Math: {{add 5 3}}</p>
+</body></html>`
+
+	templatePath := filepath.Join(tempDir, "test.html")
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
+		t.Fatalf("Failed to create template: %v", err)
+	}
+
+	config := mail.DefaultConfig()
+	queueManager := queue.NewManager()
+
+	manager := mail.NewManager(config, queueManager)
+
+	// Configure template functions through the manager
+	manager.
+		WithTemplateFunc("customUpper", func(s string) string {
+			return "CUSTOM_" + strings.ToUpper(s)
+		}).
+		WithDefaultFuncs().
+		WithFileServer(tempDir)
+
+	// Check if template manager has errors
+	if manager.TemplateManager.Error != nil {
+		t.Fatalf("Template manager error: %v", manager.TemplateManager.Error)
+	}
+
+	// Test rendering template through the template manager
+	data := map[string]interface{}{
+		"Subject": "Test Subject",
+		"Name":    "world",
+	}
+
+	rendered, err := manager.TemplateManager.RenderTemplate("test.html", data)
+	if err != nil {
+		t.Fatalf("Failed to render template: %v", err)
+	}
+
+	// Verify that both custom and default functions work
+	if !strings.Contains(rendered, "CUSTOM_WORLD") {
+		t.Error("Expected custom function to work")
+	}
+
+	if !strings.Contains(rendered, "WORLD") {
+		t.Error("Expected default upper function to work")
+	}
+
+	if !strings.Contains(rendered, "8") {
+		t.Error("Expected math function to work")
+	}
+}
+
+// TestMessageBuilderWithTemplateFuncs tests per-message template functions
+func TestMessageBuilderWithTemplateFuncs(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a simple template for testing per-message functions
+	templateContent := `<html><body>
+<h1>{{.Subject}}</h1>
+<p>Name: {{.Name}}</p>
+</body></html>`
+
+	templatePath := filepath.Join(tempDir, "custom.html")
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
+		t.Fatalf("Failed to create template: %v", err)
+	}
+
+	config := mail.DefaultConfig()
+	queueManager := queue.NewManager()
+
+	manager := mail.NewManager(config, queueManager)
+
+	// Set up global template functions
+	manager.
+		WithTemplateFunc("override", func(s string) string {
+			return "GLOBAL_" + s
+		}).
+		WithDefaultFuncs().
+		WithFileServer(tempDir)
+
+	// Check if template manager has errors
+	if manager.TemplateManager.Error != nil {
+		t.Fatalf("Template manager error: %v", manager.TemplateManager.Error)
+	}
+
+	// Create a message with per-message template functions
+	message, err := mail.NewMessage().
+		From("sender@example.com").
+		To("recipient@example.com").
+		Subject("Test Subject").
+		Template("custom.html", map[string]interface{}{
+			"Subject": "Per-Message Functions Test",
+			"Name":    "world",
+		}).
+		WithTemplateFunc("messageFunc", func(s string) string {
+			return "MESSAGE_" + strings.ToUpper(s)
+		}).
+		WithTemplateFunc("override", func(s string) string {
+			return "MESSAGE_OVERRIDE_" + s
+		}).
+		Build()
+
+	if err != nil {
+		t.Fatalf("Failed to build message: %v", err)
+	}
+
+	// Check that template functions are set
+	if message.TemplateFuncs == nil {
+		t.Fatal("Expected TemplateFuncs to be set")
+	}
+
+	if len(message.TemplateFuncs) != 2 {
+		t.Errorf("Expected 2 template functions, got %d", len(message.TemplateFuncs))
+	}
+
+	// Test a separate template string with functions for direct rendering test
+	funcTestTemplate := `<html><body>
+<h1>{{.Subject}}</h1>
+<p>Message: {{messageFunc .Name}}</p>
+<p>Global: {{upper .Name}}</p>
+<p>Override: {{override .Name}}</p>
+</body></html>`
+
+	// Create temp file with function test template
+	funcTestPath := filepath.Join(tempDir, "functest.html")
+	if err := os.WriteFile(funcTestPath, []byte(funcTestTemplate), 0600); err != nil {
+		t.Fatalf("Failed to create function test template: %v", err)
+	}
+
+	// Test rendering through the template manager directly
+	rendered, err := manager.TemplateManager.RenderTemplate("functest.html", message.TemplateData, message.TemplateFuncs)
+	if err != nil {
+		t.Fatalf("Failed to render template: %v", err)
+	}
+
+	// Verify that per-message functions work
+	if !strings.Contains(rendered, "MESSAGE_WORLD") {
+		t.Error("Expected per-message function to work")
+	}
+
+	// Verify that global functions still work
+	if !strings.Contains(rendered, "WORLD") {
+		t.Error("Expected global upper function to work")
+	}
+
+	// Verify that per-message functions override global functions
+	if !strings.Contains(rendered, "MESSAGE_OVERRIDE_world") {
+		t.Error("Expected per-message function to override global function")
+	}
+
+	if strings.Contains(rendered, "GLOBAL_world") {
+		t.Error("Global function should be overridden by per-message function")
+	}
+}
+
+// TestMessageBuilderWithTemplateFuncsMap tests setting multiple template functions at once
+func TestMessageBuilderWithTemplateFuncsMap(t *testing.T) {
+	funcs := template.FuncMap{
+		"func1": func(s string) string { return "func1_" + s },
+		"func2": func(s string) string { return "func2_" + s },
+		"func3": func(s string) string { return "func3_" + s },
+	}
+
+	message, err := mail.NewMessage().
+		From("sender@example.com").
+		To("recipient@example.com").
+		Subject("Test Subject").
+		Template("test.html", map[string]string{"data": "test"}).
+		WithTemplateFuncs(funcs).
+		Build()
+
+	if err != nil {
+		t.Fatalf("Failed to build message: %v", err)
+	}
+
+	if message.TemplateFuncs == nil {
+		t.Fatal("Expected TemplateFuncs to be set")
+	}
+
+	if len(message.TemplateFuncs) != 3 {
+		t.Errorf("Expected 3 template functions, got %d", len(message.TemplateFuncs))
+	}
+
+	// Test that all functions are present
+	for key := range funcs {
+		if _, exists := message.TemplateFuncs[key]; !exists {
+			t.Errorf("Expected template function %s to be present", key)
+		}
+	}
+}
+
+// TestSMTPSenderWithPerMessageTemplateFuncs tests end-to-end template processing with per-message functions
+func TestSMTPSenderWithPerMessageTemplateFuncs(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a template for per-message function testing
+	templateContent := `<html><body>
+<h1>{{.Subject}}</h1>
+<p>Name: {{.Name}}</p>
+<p>Upper: {{upper .Name}}</p>
+</body></html>`
+
+	templatePath := filepath.Join(tempDir, "permsg.html")
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
+		t.Fatalf("Failed to create template: %v", err)
+	}
+
+	config := mail.ClientConfig{
+		Enabled:    true, // Enable the SMTP sender
+		Host:       "smtp.example.com",
+		Port:       587,
+		From:       "sender@example.com",
+		MaxRetries: 0, // Disable retries for faster test
+	}
+
+	templateConfig := mail.TemplateConfig{
+		Enabled:         true, // Enable template processing
+		DefaultTemplate: "permsg.html",
+	}
+
+	tm := mail.NewTemplateManager(templateConfig).WithDefaultFuncs().WithFileServer(tempDir)
+	if tm.Error != nil {
+		t.Fatalf("Template manager error: %v", tm.Error)
+	}
+
+	sender := mail.NewSMTPSender(config, tm)
+
+	// Now create the custom template after template manager is set up
+	customTemplateContent := `<html><body>
+<h1>{{.Subject}}</h1>
+<p>Custom: {{customFunc .Name}}</p>
+<p>Upper: {{upper .Name}}</p>
+</body></html>`
+
+	customTemplatePath := filepath.Join(tempDir, "custom_permsg.html")
+	if err := os.WriteFile(customTemplatePath, []byte(customTemplateContent), 0600); err != nil {
+		t.Fatalf("Failed to create custom template: %v", err)
+	}
+
+	// Create message using the basic template but test via direct rendering
+	message := &mail.Message{
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test Subject",
+		Template: "permsg.html", // Use the basic template for SMTP flow
+		TemplateData: map[string]string{
+			"Subject": "Template Test",
+			"Name":    "world",
+		},
+		TemplateFuncs: template.FuncMap{
+			"customFunc": func(s string) string {
+				return "CUSTOM_" + strings.ToUpper(s)
+			},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// This will fail due to network, but template processing should work
+	err := sender.Send(ctx, message)
+	// We just want to ensure no template processing errors occur
+	// Network errors are expected in tests
+	_ = err
+
+	// Verify that the HTML body was generated from template
+	if message.HTMLBody == "" {
+		t.Error("Expected HTML body to be generated from template")
+	}
+
+	if !strings.Contains(message.HTMLBody, "world") {
+		t.Error("Expected template data to be rendered")
+	}
+
+	if !strings.Contains(message.HTMLBody, "WORLD") {
+		t.Error("Expected default upper function to work")
+	}
+
+	// Test per-message functions with direct rendering
+	customRendered, err := tm.RenderTemplate("custom_permsg.html", message.TemplateData, message.TemplateFuncs)
+	if err != nil {
+		t.Fatalf("Failed to render with custom functions: %v", err)
+	}
+
+	if !strings.Contains(customRendered, "CUSTOM_WORLD") {
+		t.Error("Expected per-message custom function to work in direct rendering")
 	}
 }

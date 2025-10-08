@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/logging"
 	"golang.org/x/time/rate"
 )
 
@@ -259,7 +259,7 @@ func (router *Router) rateLimit(w http.ResponseWriter, r *http.Request, patterns
 	if matched != "" {
 		ip := router.clientIP(r)
 		if ip == "" {
-			log.Warn().Msg("rate limiting failed, no client IP found")
+			logger.Warn().Msg("rate limiting failed, no client IP found")
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -294,7 +294,7 @@ func (router *Router) canonicalRedirect(w http.ResponseWriter, r *http.Request) 
 			protocol = "https"
 		}
 
-		log.Trace().Str("host", r.Host).Str("domain", router.canonicalDomain).Str("port", port).Str("protocol", protocol).Msg("redirecting to canonical domain")
+		logger.Trace().Fields(logging.F("host", r.Host), logging.F("domain", router.canonicalDomain), logging.F("port", port), logging.F("protocol", protocol)).Msg("redirecting to canonical domain")
 		http.Redirect(w, r, protocol+"://"+router.canonicalDomain+port+r.RequestURI, http.StatusMovedPermanently)
 		return
 	}
@@ -305,12 +305,12 @@ func (router *Router) honeypot(w http.ResponseWriter, r *http.Request) {
 
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
-		log.Warn().Str("ip", ipStr).Msg("honeypot accessed with invalid IP address")
+		logger.Warn().Fields(logging.F("ip", ipStr)).Msg("honeypot accessed with invalid IP address")
 		http.Error(w, "Invalid IP address", http.StatusBadRequest)
 		return
 	}
 
-	log.Trace().Str("ip", ip.String()).Msg("honeypot triggered, checking IP address")
+	logger.Trace().Fields(logging.F("ip", ip.String())).Msg("honeypot triggered, checking IP address")
 	if !router.ipInList(ip, router.whitelist) {
 		cidr := ip.String() + "/32"
 		if ip.To4() == nil {
@@ -319,11 +319,11 @@ func (router *Router) honeypot(w http.ResponseWriter, r *http.Request) {
 
 		_, network, err := net.ParseCIDR(cidr)
 		if err != nil {
-			log.Error().Err(err).Str("ip", cidr).Msg("failed to parse IP address for honeypot")
+			logger.Error().Fields(logging.F("error", err), logging.F("ip", cidr)).Msg("failed to parse IP address for honeypot")
 			return
 		}
 
-		log.Debug().Str("ip", network.String()).Msg("honeypot triggered, blocking IP address")
+		logger.Debug().Fields(logging.F("ip", network.String())).Msg("honeypot triggered, blocking IP address")
 		router.blacklist[network.String()] = network
 		if router.honeypotCallback != nil {
 			router.honeypotCallback(router.blacklist)
@@ -336,13 +336,13 @@ func (router *Router) block(w http.ResponseWriter, r *http.Request) bool {
 	ipStr := router.clientIP(r)
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
-		log.Warn().Str("ip", ipStr).Msg("blocked request with invalid IP address")
+		logger.Warn().Fields(logging.F("ip", ipStr)).Msg("blocked request with invalid IP address")
 		http.Error(w, "Invalid IP address", http.StatusBadRequest)
 		return true
 	}
 
 	if !router.ipInList(ip, router.whitelist) && router.ipInList(ip, router.blacklist) {
-		log.Trace().Str("ip", ip.String()).Msg("blocked request from IP address")
+		logger.Trace().Fields(logging.F("ip", ip.String())).Msg("blocked request from IP address")
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return true
 	}

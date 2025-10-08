@@ -7,7 +7,7 @@ import (
 	"encoding/base64"
 	"io"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // AesCipher is a struct that provides methods for encrypting and decrypting data using AES.
@@ -79,7 +79,8 @@ func (a *AesCipher) Encrypt(plaintext string, out io.Writer) *AesCipher {
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+	_, err = io.ReadFull(rand.Reader, nonce)
+	if err != nil {
 		a.Error = apperror.NewError("failed to read nonce").AddError(err)
 		return a
 	}

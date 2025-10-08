@@ -4,22 +4,34 @@ import (
 	"context"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // TieredCache implements a multi-tier cache system (e.g., L1: Memory, L2: Redis)
 type TieredCache struct {
 	*BaseCache
+
 	l1Cache Cache // Fast cache (e.g., memory)
 	l2Cache Cache // Slower but larger cache (e.g., Redis)
 }
 
-// NewTieredCache creates a new tiered cache with L1 and L2 cache implementations
+// NewTieredCache creates a new multi-tier cache with L1 and L2 cache implementations.
+// The L1 cache is typically a fast, small cache (like memory) while L2 is a larger,
+// persistent cache (like Redis). Reads check L1 first, then L2, with automatic promotion
+// of hot data to L1. Writes go to both tiers for consistency.
+//
+// Example usage:
+//
+//	memCache := cache.NewMemoryCache()
+//	redisCache := cache.NewRedisCache(redisConfig)
+//	tiered := cache.NewTieredCache(memCache, redisCache)
 func NewTieredCache(l1Cache, l2Cache Cache) *TieredCache {
 	return NewTieredCacheWithConfig(l1Cache, l2Cache, DefaultConfig())
 }
 
-// NewTieredCacheWithConfig creates a new tiered cache with custom configuration
+// NewTieredCacheWithConfig creates a new tiered cache with custom configuration.
+// This allows fine-tuning of cache behavior across both tiers while maintaining
+// the performance benefits of multi-tier caching architecture.
 func NewTieredCacheWithConfig(l1Cache, l2Cache Cache, config Config) *TieredCache {
 	return &TieredCache{
 		BaseCache: NewBaseCache(config),

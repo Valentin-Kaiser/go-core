@@ -3,7 +3,7 @@ package memsize_test
 import (
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/memsize"
+	"github.com/valentin-kaiser/go-core/memsize"
 )
 
 func TestSizeOf(t *testing.T) {

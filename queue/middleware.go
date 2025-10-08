@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // Middleware is a function that wraps a JobHandler
@@ -25,29 +24,29 @@ func LoggingMiddleware(next JobHandler) JobHandler {
 	return func(ctx context.Context, job *Job) error {
 		start := time.Now()
 
-		log.Info().
-			Str("job_id", job.ID).
-			Str("job_type", job.Type).
-			Str("priority", job.Priority.String()).
+		logger.Debug().
+			Field("job_id", job.ID).
+			Field("job_type", job.Type).
+			Field("priority", job.Priority.String()).
 			Msg("job started")
 
 		err := next(ctx, job)
 		duration := time.Since(start)
 
 		if err != nil {
-			log.Error().
+			logger.Error().
 				Err(err).
-				Str("job_id", job.ID).
-				Str("job_type", job.Type).
-				Dur("duration", duration).
+				Field("job_id", job.ID).
+				Field("job_type", job.Type).
+				Field("duration", duration).
 				Msg("job failed")
 			return err
 		}
 
-		log.Info().
-			Str("job_id", job.ID).
-			Str("job_type", job.Type).
-			Dur("duration", duration).
+		logger.Debug().
+			Field("job_id", job.ID).
+			Field("job_type", job.Type).
+			Field("duration", duration).
 			Msg("job completed")
 		return nil
 	}
@@ -80,27 +79,27 @@ func MetricsMiddleware(next JobHandler) JobHandler {
 	return func(ctx context.Context, job *Job) error {
 		start := time.Now()
 
-		log.Debug().
-			Str("job_id", job.ID).
-			Str("job_type", job.Type).
+		logger.Trace().
+			Field("job_id", job.ID).
+			Field("job_type", job.Type).
 			Msg("job metrics: started")
 
 		err := next(ctx, job)
 		duration := time.Since(start)
 
 		if err != nil {
-			log.Debug().
-				Str("job_id", job.ID).
-				Str("job_type", job.Type).
-				Dur("duration", duration).
+			logger.Trace().
+				Field("job_id", job.ID).
+				Field("job_type", job.Type).
+				Field("duration", duration).
 				Msg("job metrics: failed")
 			return err
 		}
 
-		log.Debug().
-			Str("job_id", job.ID).
-			Str("job_type", job.Type).
-			Dur("duration", duration).
+		logger.Trace().
+			Field("job_id", job.ID).
+			Field("job_type", job.Type).
+			Field("duration", duration).
 			Msg("job metrics: completed")
 		return nil
 	}
@@ -112,10 +111,10 @@ func RecoveryMiddleware(next JobHandler) JobHandler {
 		defer func() {
 			if r := recover(); r != nil {
 				err = apperror.NewError(fmt.Sprintf("job panic: %v", r))
-				log.Error().
-					Str("job_id", job.ID).
-					Str("job_type", job.Type).
-					Interface("panic", r).
+				logger.Error().
+					Field("job_id", job.ID).
+					Field("job_type", job.Type).
+					Field("panic", r).
 					Msg("job panic recovered")
 			}
 		}()

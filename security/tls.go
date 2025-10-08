@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // NewTLSConfig creates a *tls.Config from a certificate and optional CA pool.
@@ -33,7 +33,8 @@ func LoadCertAndConfig(certFile, keyFile, caFile string, clientAuth tls.ClientAu
 		return nil, apperror.Wrap(err)
 	}
 
-	if err := ValidateCertificate(cert); err != nil {
+	err = ValidateCertificate(cert)
+	if err != nil {
 		return nil, apperror.Wrap(err)
 	}
 

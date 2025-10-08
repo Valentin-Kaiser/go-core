@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/mail"
+	"github.com/valentin-kaiser/go-core/mail"
 )
 
 // TestSecurityManager tests the SecurityManager functionality

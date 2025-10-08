@@ -22,7 +22,7 @@
 //		"context"
 //		"time"
 //
-//		"github.com/Valentin-Kaiser/go-core/cache"
+//		"github.com/valentin-kaiser/go-core/cache"
 //	)
 //
 //	func main() {
@@ -71,7 +71,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/config"
 )
 
 // Cache defines the interface for cache implementations
@@ -209,6 +210,11 @@ type Config struct {
 	Namespace       string        `json:"namespace"`
 	Serializer      Serializer    `json:"-"`
 	EventHandler    EventHandler  `json:"-"`
+}
+
+// Changed checks if the cache configuration has changed compared to another configuration.
+func (c *Config) Changed(n *Config) bool {
+	return config.Changed(c, n)
 }
 
 // Serializer defines the interface for value serialization

@@ -13,18 +13,18 @@
 //	package main
 //
 //	import (
-//		"github.com/Valentin-Kaiser/go-core/interruption"
-//		"github.com/rs/zerolog/log"
+//		"github.com/valentin-kaiser/go-core/interruption"
+//		"fmt"
 //	)
 //
 //	func main() {
 //		defer interruption.Handle()
-//		log.Info().Msg("Application started")
+//		fmt.Println("Application started")
 //		// Your application logic here
 //
 //		ctx := interruption.OnSignal([]func() error{
 //			func() error {
-//				log.Info().Msg("Received interrupt signal, shutting down gracefully")
+//				fmt.Println("Received interrupt signal, shutting down gracefully")
 //				return nil
 //			},
 //		}, os.Interrupt, syscall.SIGTERM)
@@ -47,12 +47,23 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/logging"
 )
 
-// Catch is a function that handles panics in the application
-// It recovers from the panic and logs the error message along with the stack trace
+var logger = logging.GetPackageLogger("interruption")
+
+// Catch recovers from panics in the application and logs detailed error information.
+// It captures the panic value, caller information, and stack trace for debugging.
+// When debug mode is enabled, it logs the full stack trace; otherwise, it logs only
+// the essential error details to avoid cluttering production logs.
+//
+// This function should be called with defer at the beginning of main() and any goroutines:
+//
+//	func main() {
+//		defer interruption.Catch()
+//		// application logic
+//	}
 func Catch() {
 	if err := recover(); err != nil {
 		caller := "unknown"
@@ -63,10 +74,10 @@ func Catch() {
 		}
 
 		if flag.Debug {
-			log.Error().Msgf("[Interrupt] %v code: %v => %v \n %v", caller, line, err, string(debug.Stack()))
+			logger.Error().Msgf("%v code: %v => %v \n %v", caller, line, err, string(debug.Stack()))
 			return
 		}
-		log.Error().Msgf("[Interrupt] %v code: %v => %v", caller, line, err)
+		logger.Error().Msgf("%v code: %v => %v", caller, line, err)
 	}
 }
 
@@ -98,7 +109,7 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 			func() {
 				defer Catch()
 				if err := handler(); err != nil {
-					log.Error().Err(err).Msgf("[Signal] handler failed: %v", err)
+					logger.Error().Err(err).Msgf("handler failed")
 				}
 			}()
 		}
@@ -117,7 +128,7 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 //
 //		ctx := interruption.OnSignal([]func() error{
 //			func() error {
-//				log.Info().Msg("Shutting down gracefully...")
+//				log.Info().Msg("shutting down gracefully...")
 //				return nil
 //			},
 //		}, os.Interrupt, syscall.SIGTERM)
@@ -125,10 +136,19 @@ func OnSignal(handlers []func() error, signals ...os.Signal) context.Context {
 //		defer interruption.WaitForShutdown(ctx)
 //
 //		// Your application logic here
-//		log.Info().Msg("Application running...")
+//		log.Info().Msg("application running...")
 //
 //		// Application will wait for signal and graceful shutdown when function exits
 //	}
+//
+// WaitForShutdown blocks until the provided context is cancelled, typically used
+// to wait for graceful shutdown signal handlers to complete their cleanup operations.
+// If the context is nil, the function returns immediately.
+//
+// This function is commonly used in conjunction with OnSignal to implement graceful shutdown:
+//
+//	ctx := interruption.OnSignal(handlers, os.Interrupt, syscall.SIGTERM)
+//	defer interruption.WaitForShutdown(ctx)
 func WaitForShutdown(ctx context.Context) {
 	if ctx == nil {
 		return
@@ -147,19 +167,19 @@ func WaitForShutdown(ctx context.Context) {
 //
 //		defer interruption.SetupGracefulShutdown([]func() error{
 //			func() error {
-//				log.Info().Msg("Database disconnecting...")
+//				log.Info().Msg("database disconnecting...")
 //				// database.Disconnect()
 //				return nil
 //			},
 //			func() error {
-//				log.Info().Msg("Web server stopping...")
+//				log.Info().Msg("web server stopping...")
 //				// web.Instance().Stop()
 //				return nil
 //			},
 //		}, os.Interrupt, syscall.SIGTERM)
 //
 //		// Your application logic here
-//		log.Info().Msg("Application running...")
+//		log.Info().Msg("application running...")
 //
 //		// Application will automatically wait for graceful shutdown when function exits
 //	}

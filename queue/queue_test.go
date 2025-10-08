@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/queue"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/queue"
 )
 
 func TestNewJob(t *testing.T) {

@@ -7,8 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/apperror"
 )
 
 // Priority defines the priority levels for jobs
@@ -140,7 +139,16 @@ type BatchManager struct {
 	mutex   sync.RWMutex
 }
 
-// NewBatchManager creates a new batch manager
+// NewBatchManager creates a new batch manager for handling grouped job operations.
+// Batch managers allow you to group related jobs together and track their collective
+// progress, providing operations like creating batches, monitoring batch completion,
+// and handling batch-level callbacks.
+//
+// Example usage:
+//
+//	batchMgr := queue.NewBatchManager(manager)
+//	batch := batchMgr.CreateBatch("user-emails")
+//	// Add jobs to batch...
 func NewBatchManager(manager *Manager) *BatchManager {
 	return &BatchManager{
 		manager: manager,
@@ -269,7 +277,7 @@ func (bm *BatchManager) DeleteBatch(ctx context.Context, id string) error {
 	for _, jobID := range batch.JobIDs {
 		if err := bm.manager.queue.DeleteJob(ctx, jobID); err != nil {
 			// Log the error but continue with other jobs
-			log.Error().Err(err).Str("job_id", jobID).Msg("Failed to delete job from batch")
+			logger.Error().Err(err).Field("job_id", jobID).Msg("Failed to delete job from batch")
 		}
 	}
 
@@ -287,7 +295,18 @@ type JobContext struct {
 	Job *Job
 }
 
-// NewJobContext creates a new job context
+// NewJobContext creates a new job context that provides access to job information
+// and progress reporting capabilities within job handlers. The context allows handlers
+// to update job progress and access job metadata during execution.
+//
+// Example usage in a job handler:
+//
+//	func myHandler(ctx *queue.JobContext) error {
+//		ctx.ReportProgress(0.5) // 50% complete
+//		// do work...
+//		ctx.ReportProgress(1.0) // 100% complete
+//		return nil
+//	}
 func NewJobContext(_ context.Context, job *Job) *JobContext {
 	return &JobContext{
 		Job: job,
@@ -361,7 +380,19 @@ func (jc *JobContext) GetMetadata(key string) (string, bool) {
 	return value, exists
 }
 
-// IsRetryable checks if an error is retryable
+// IsRetryable checks if an error is a retryable error that should trigger job retry.
+// Returns true if the error is of type RetryableError, which indicates the job
+// should be retried according to the configured retry policy instead of being marked as failed.
+//
+// Example usage:
+//
+//	if err := processJob(); err != nil {
+//		if queue.IsRetryable(err) {
+//			// Job will be automatically retried
+//		} else {
+//			// Job will be marked as failed
+//		}
+//	}
 func IsRetryable(err error) bool {
 	if err == nil {
 		return false

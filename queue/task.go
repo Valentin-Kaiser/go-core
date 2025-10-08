@@ -7,10 +7,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
 	"github.com/google/uuid"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/logging"
 )
+
+var logger = logging.GetPackageLogger("queue")
 
 // TaskFunc represents a task function that can be executed
 type TaskFunc func(ctx context.Context) error
@@ -39,24 +41,28 @@ func (t TaskType) String() string {
 
 // Task represents a scheduled task
 type Task struct {
-	ID         string        `json:"id"`
-	Name       string        `json:"name"`
-	Type       TaskType      `json:"type"`
-	CronSpec   string        `json:"cron_spec,omitempty"`
-	Interval   time.Duration `json:"interval,omitempty"`
-	Function   TaskFunc      `json:"-"`
-	NextRun    time.Time     `json:"next_run"`
-	LastRun    time.Time     `json:"last_run"`
-	RunCount   int64         `json:"run_count"`
-	ErrorCount int64         `json:"error_count"`
-	LastError  string        `json:"last_error,omitempty"`
-	IsRunning  bool          `json:"is_running"`
-	MaxRetries int           `json:"max_retries"`
-	RetryDelay time.Duration `json:"retry_delay"`
-	Timeout    time.Duration `json:"timeout"`
-	Enabled    bool          `json:"enabled"`
-	CreatedAt  time.Time     `json:"created_at"`
-	UpdatedAt  time.Time     `json:"updated_at"`
+	ID                  string        `json:"id"`
+	Name                string        `json:"name"`
+	Type                TaskType      `json:"type"`
+	CronSpec            string        `json:"cron_spec,omitempty"`
+	Interval            time.Duration `json:"interval,omitempty"`
+	Function            TaskFunc      `json:"-"`
+	NextRun             time.Time     `json:"next_run"`
+	LastRun             time.Time     `json:"last_run"`
+	RunCount            int64         `json:"run_count"`
+	ErrorCount          int64         `json:"error_count"`
+	ConsecutiveFailures int64         `json:"consecutive_failures"`
+	LastError           string        `json:"last_error,omitempty"`
+	IsRunning           bool          `json:"is_running"`
+	Quiet               bool          `json:"log_on_first_failure_only"`
+	AllowConcurrent     bool          `json:"allow_concurrent"`
+	MaxRetries          int           `json:"max_retries"`
+	RetryDelay          time.Duration `json:"retry_delay"`
+	Timeout             time.Duration `json:"timeout"`
+	Enabled             bool          `json:"enabled"`
+	CreatedAt           time.Time     `json:"created_at"`
+	UpdatedAt           time.Time     `json:"updated_at"`
+	mutex               sync.RWMutex  `json:"-"`
 }
 
 // TaskScheduler manages background tasks
@@ -68,7 +74,6 @@ type TaskScheduler struct {
 	workerWg       sync.WaitGroup
 	checkInterval  time.Duration
 	defaultTimeout time.Duration
-	defaultRetries int
 	retryDelay     time.Duration
 	cancel         context.CancelFunc
 }
@@ -80,7 +85,6 @@ func NewTaskScheduler() *TaskScheduler {
 		shutdownChan:   make(chan struct{}),
 		checkInterval:  time.Second * 10,
 		defaultTimeout: time.Minute * 5,
-		defaultRetries: 3,
 		retryDelay:     time.Second * 5,
 	}
 }
@@ -101,14 +105,6 @@ func (s *TaskScheduler) WithDefaultTimeout(timeout time.Duration) *TaskScheduler
 	return s
 }
 
-// WithDefaultRetries sets the default number of retries for failed tasks
-func (s *TaskScheduler) WithDefaultRetries(retries int) *TaskScheduler {
-	if retries >= 0 {
-		s.defaultRetries = retries
-	}
-	return s
-}
-
 // WithRetryDelay sets the delay between retries
 func (s *TaskScheduler) WithRetryDelay(delay time.Duration) *TaskScheduler {
 	if delay > 0 {
@@ -124,15 +120,25 @@ func (s *TaskScheduler) RegisterCronTask(name, cronSpec string, fn TaskFunc) err
 
 // RegisterIntervalTask registers a new interval-based task
 func (s *TaskScheduler) RegisterIntervalTask(name string, interval time.Duration, fn TaskFunc) error {
-	return s.RegisterIntervalTaskWithOptions(name, interval, fn, TaskOptions{})
+	return s.RegisterIntervalTaskWithOptions(name, interval, fn, TaskOptions{
+		Immediately: true,
+	})
 }
 
 // TaskOptions provides configuration options for tasks
 type TaskOptions struct {
+	// MaxRetries specifies the maximum number of retries for a task default is 0 (no retries)
 	MaxRetries int
+	// RetryDelay specifies the delay between retries (default is 5 seconds)
 	RetryDelay time.Duration
-	Timeout    time.Duration
-	Enabled    *bool
+	// Timeout specifies the maximum duration for task execution (default is 5 minutes)
+	Timeout time.Duration
+	// Concurrent specifies whether the task can run concurrently (default is false)
+	Concurrent bool
+	// Immediately specifies whether the task should run immediately upon registration (default is false)
+	Immediately bool
+	// Quiet specifies whether to log only the first failure in a series of consecutive failures (default is false)
+	Quiet bool
 }
 
 // RegisterCronTaskWithOptions registers a new cron-based task with options
@@ -157,11 +163,6 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 		return apperror.NewError(fmt.Sprintf("task with name '%s' already exists", name))
 	}
 
-	maxRetries := s.defaultRetries
-	if options.MaxRetries > 0 {
-		maxRetries = options.MaxRetries
-	}
-
 	retryDelay := s.retryDelay
 	if options.RetryDelay > 0 {
 		retryDelay = options.RetryDelay
@@ -172,21 +173,19 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 		timeout = options.Timeout
 	}
 	task := &Task{
-		ID:         generateTaskID(),
-		Name:       name,
-		Type:       TaskTypeCron,
-		CronSpec:   cronSpec,
-		Function:   fn,
-		MaxRetries: maxRetries,
-		RetryDelay: retryDelay,
-		Timeout:    timeout,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-		Enabled:    true,
-	}
-
-	if options.Enabled != nil {
-		task.Enabled = *options.Enabled
+		ID:              generateTaskID(),
+		Name:            name,
+		Type:            TaskTypeCron,
+		CronSpec:        cronSpec,
+		Function:        fn,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
+		RetryDelay:      retryDelay,
+		Timeout:         timeout,
+		Quiet:           options.Quiet,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		Enabled:         true,
 	}
 
 	nextRun, err := s.calculateNextCronRun(cronSpec, time.Now())
@@ -195,13 +194,16 @@ func (s *TaskScheduler) RegisterCronTaskWithOptions(name, cronSpec string, fn Ta
 	}
 
 	task.NextRun = nextRun
+	if options.Immediately {
+		task.NextRun = time.Now()
+	}
 	s.tasks[name] = task
 
-	log.Info().
-		Str("task_name", name).
-		Str("cron_spec", cronSpec).
-		Time("next_run", nextRun).
-		Msg("Cron task registered")
+	logger.Debug().Fields(
+		logging.F("task_name", name),
+		logging.F("cron_spec", cronSpec),
+		logging.F("next_run", task.NextRun),
+	).Msg("cron task registered")
 
 	return nil
 }
@@ -225,9 +227,123 @@ func (s *TaskScheduler) RegisterIntervalTaskWithOptions(name string, interval ti
 		return apperror.NewError(fmt.Sprintf("task with name '%s' already exists", name))
 	}
 
-	maxRetries := s.defaultRetries
-	if options.MaxRetries > 0 {
-		maxRetries = options.MaxRetries
+	retryDelay := s.retryDelay
+	if options.RetryDelay > 0 {
+		retryDelay = options.RetryDelay
+	}
+
+	timeout := s.defaultTimeout
+	if options.Timeout > 0 {
+		timeout = options.Timeout
+	}
+
+	task := &Task{
+		ID:              generateTaskID(),
+		Name:            name,
+		Type:            TaskTypeInterval,
+		Interval:        interval,
+		Function:        fn,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
+		RetryDelay:      retryDelay,
+		Timeout:         timeout,
+		Quiet:           options.Quiet,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		Enabled:         true,
+	}
+
+	task.NextRun = time.Now().Add(interval)
+	if options.Immediately {
+		task.NextRun = time.Now()
+	}
+
+	s.tasks[name] = task
+
+	logger.Debug().Fields(
+		logging.F("task_name", name),
+		logging.F("interval", interval),
+		logging.F("next_run", task.NextRun),
+	).Msg("interval task registered")
+
+	return nil
+}
+
+// RegisterOrRescheduleCronTask registers a new cron-based task or reschedules an existing one
+func (s *TaskScheduler) RegisterOrRescheduleCronTask(name, cronSpec string, fn TaskFunc) error {
+	return s.RegisterOrRescheduleCronTaskWithOptions(name, cronSpec, fn, TaskOptions{})
+}
+
+// RegisterOrRescheduleIntervalTask registers a new interval-based task or reschedules an existing one
+func (s *TaskScheduler) RegisterOrRescheduleIntervalTask(name string, interval time.Duration, fn TaskFunc) error {
+	return s.RegisterOrRescheduleIntervalTaskWithOptions(name, interval, fn, TaskOptions{})
+}
+
+// RegisterOrRescheduleCronTaskWithOptions registers a new cron-based task or reschedules an existing one with options
+func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec string, fn TaskFunc, options TaskOptions) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if cronSpec == "" {
+		return apperror.NewError("cron specification cannot be empty")
+	}
+	if fn == nil {
+		return apperror.NewError("task function cannot be nil")
+	}
+
+	if err := s.ValidateCronSpec(cronSpec); err != nil {
+		return apperror.NewError(fmt.Sprintf("invalid cron specification: %v", err))
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	existingTask, exists := s.tasks[name]
+	if exists {
+		// Task exists, reschedule it
+		existingTask.mutex.RLock()
+		isRunning := existingTask.IsRunning
+		existingTask.mutex.RUnlock()
+
+		if isRunning {
+			return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+		}
+
+		nextRun, err := s.calculateNextCronRun(cronSpec, time.Now())
+		if err != nil {
+			return apperror.NewError(fmt.Sprintf("failed to calculate next run time: %v", err))
+		}
+
+		existingTask.mutex.Lock()
+		existingTask.Type = TaskTypeCron
+		existingTask.CronSpec = cronSpec
+		existingTask.Interval = 0
+		existingTask.Function = fn
+		existingTask.NextRun = nextRun
+		existingTask.UpdatedAt = time.Now()
+
+		// Update options if provided
+		if options.MaxRetries >= 0 { // Allow explicit 0 to disable retries
+			existingTask.MaxRetries = options.MaxRetries
+		}
+		if options.RetryDelay > 0 {
+			existingTask.RetryDelay = options.RetryDelay
+		}
+		if options.Timeout > 0 {
+			existingTask.Timeout = options.Timeout
+		}
+		existingTask.AllowConcurrent = options.Concurrent
+		existingTask.Quiet = options.Quiet
+		nextRunForLog := existingTask.NextRun
+		existingTask.mutex.Unlock()
+
+		logger.Trace().
+			Field("task_name", name).
+			Field("cron_spec", cronSpec).
+			Field("next_run", nextRunForLog).
+			Msg("existing cron task rescheduled")
+
+		return nil
 	}
 
 	retryDelay := s.retryDelay
@@ -241,31 +357,135 @@ func (s *TaskScheduler) RegisterIntervalTaskWithOptions(name string, interval ti
 	}
 
 	task := &Task{
-		ID:         generateTaskID(),
-		Name:       name,
-		Type:       TaskTypeInterval,
-		Interval:   interval,
-		Function:   fn,
-		NextRun:    time.Now(), // Run immediately the first time
-		MaxRetries: maxRetries,
-		RetryDelay: retryDelay,
-		Timeout:    timeout,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-		Enabled:    true,
+		ID:              generateTaskID(),
+		Name:            name,
+		Type:            TaskTypeCron,
+		CronSpec:        cronSpec,
+		Function:        fn,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
+		RetryDelay:      retryDelay,
+		Timeout:         timeout,
+		Quiet:           options.Quiet,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		Enabled:         true,
 	}
 
-	if options.Enabled != nil {
-		task.Enabled = *options.Enabled
+	nextRun, err := s.calculateNextCronRun(cronSpec, time.Now())
+	if err != nil {
+		return apperror.NewError(fmt.Sprintf("failed to calculate next run time: %v", err))
+	}
+
+	task.NextRun = nextRun
+	if options.Immediately {
+		task.NextRun = time.Now()
+	}
+	s.tasks[name] = task
+
+	logger.Debug().
+		Field("task_name", name).
+		Field("cron_spec", cronSpec).
+		Field("next_run", task.NextRun).
+		Msg("new cron task registered")
+
+	return nil
+}
+
+// RegisterOrRescheduleIntervalTaskWithOptions registers a new interval-based task or reschedules an existing one with options
+func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string, interval time.Duration, fn TaskFunc, options TaskOptions) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if interval <= 0 {
+		return apperror.NewError("interval must be positive")
+	}
+	if fn == nil {
+		return apperror.NewError("task function cannot be nil")
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	existingTask, exists := s.tasks[name]
+	if exists {
+		existingTask.mutex.RLock()
+		isRunning := existingTask.IsRunning
+		existingTask.mutex.RUnlock()
+
+		if isRunning {
+			return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+		}
+
+		existingTask.mutex.Lock()
+		existingTask.Type = TaskTypeInterval
+		existingTask.CronSpec = "" // Clear cron spec for interval tasks
+		existingTask.Interval = interval
+		existingTask.Function = fn
+		existingTask.NextRun = time.Now().Add(interval)
+		existingTask.UpdatedAt = time.Now()
+
+		if options.MaxRetries >= 0 { // Allow explicit 0 to disable retries
+			existingTask.MaxRetries = options.MaxRetries
+		}
+		if options.RetryDelay > 0 {
+			existingTask.RetryDelay = options.RetryDelay
+		}
+		if options.Timeout > 0 {
+			existingTask.Timeout = options.Timeout
+		}
+		existingTask.AllowConcurrent = options.Concurrent
+		existingTask.Quiet = options.Quiet
+		nextRunForLog := existingTask.NextRun
+		existingTask.mutex.Unlock()
+
+		logger.Trace().
+			Field("task_name", name).
+			Field("interval", interval).
+			Field("next_run", nextRunForLog).
+			Msg("existing interval task rescheduled")
+
+		return nil
+	}
+
+	retryDelay := s.retryDelay
+	if options.RetryDelay > 0 {
+		retryDelay = options.RetryDelay
+	}
+
+	timeout := s.defaultTimeout
+	if options.Timeout > 0 {
+		timeout = options.Timeout
+	}
+
+	task := &Task{
+		ID:              generateTaskID(),
+		Name:            name,
+		Type:            TaskTypeInterval,
+		Interval:        interval,
+		Function:        fn,
+		AllowConcurrent: options.Concurrent,
+		MaxRetries:      options.MaxRetries,
+		RetryDelay:      retryDelay,
+		Timeout:         timeout,
+		Quiet:           options.Quiet,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+		Enabled:         true,
+	}
+
+	task.NextRun = time.Now().Add(interval)
+	if options.Immediately {
+		task.NextRun = time.Now()
 	}
 
 	s.tasks[name] = task
 
-	log.Info().
-		Str("task_name", name).
-		Dur("interval", interval).
-		Time("next_run", task.NextRun).
-		Msg("Interval task registered")
+	logger.Debug().
+		Field("task_name", name).
+		Field("interval", interval).
+		Field("next_run", task.NextRun).
+		Msg("new interval task registered")
 
 	return nil
 }
@@ -281,7 +501,7 @@ func (s *TaskScheduler) Start(ctx context.Context) error {
 	s.workerWg.Add(1)
 	go s.schedulerLoop(ctx)
 
-	log.Info().Msg("Task scheduler started")
+	logger.Debug().Msg("task scheduler started")
 	return nil
 }
 
@@ -291,7 +511,7 @@ func (s *TaskScheduler) Stop() {
 		return
 	}
 
-	log.Info().Msg("Stopping task scheduler...")
+	logger.Debug().Msg("stopping task scheduler...")
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -299,7 +519,7 @@ func (s *TaskScheduler) Stop() {
 	close(s.shutdownChan)
 	s.workerWg.Wait()
 
-	log.Info().Msg("Task scheduler stopped")
+	logger.Debug().Msg("task scheduler stopped")
 }
 
 // schedulerLoop is the main scheduler loop
@@ -328,7 +548,15 @@ func (s *TaskScheduler) checkAndRunTasks(ctx context.Context) {
 	now := time.Now()
 
 	for _, task := range s.tasks {
-		if task.Enabled && !task.IsRunning && now.After(task.NextRun) {
+		task.mutex.RLock()
+		enabled := task.Enabled
+		nextRun := task.NextRun
+		isRunning := task.IsRunning
+		allowConcurrent := task.AllowConcurrent
+		task.mutex.RUnlock()
+
+		// Run task if it's enabled, scheduled to run, and either not running or concurrent execution is allowed
+		if enabled && now.After(nextRun) && (!isRunning || allowConcurrent) {
 			tasksToRun = append(tasksToRun, task)
 		}
 	}
@@ -344,10 +572,30 @@ func (s *TaskScheduler) checkAndRunTasks(ctx context.Context) {
 func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 	defer s.workerWg.Done()
 
-	s.tasksMutex.Lock()
-	task.IsRunning = true
-	task.UpdatedAt = time.Now()
-	s.tasksMutex.Unlock()
+	// For concurrent tasks, update next run time immediately so next instance can be scheduled
+	// For non-concurrent tasks, set running state to prevent overlapping executions
+	if task.AllowConcurrent {
+		err := s.updateNextRun(task)
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Field("task_name", task.Name).
+				Msg("failed to update next run time before execution")
+		}
+	}
+
+	if !task.AllowConcurrent {
+		task.mutex.Lock()
+		task.IsRunning = true
+		task.UpdatedAt = time.Now()
+		task.mutex.Unlock()
+	}
+
+	if task.AllowConcurrent {
+		task.mutex.Lock()
+		task.UpdatedAt = time.Now()
+		task.mutex.Unlock()
+	}
 
 	taskCtx, cancel := context.WithTimeout(ctx, task.Timeout)
 	defer cancel()
@@ -360,45 +608,68 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		default:
 		}
 
-		log.Debug().
-			Str("task_name", task.Name).
-			Int("attempt", attempt+1).
-			Int("max_retries", task.MaxRetries+1).
-			Msg("Executing task")
+		logger.Trace().
+			Field("task_name", task.Name).
+			Field("attempt", attempt+1).
+			Field("max_retries", task.MaxRetries+1).
+			Msg("executing task")
 
 		err := task.Function(taskCtx)
 
 		if err == nil {
-			s.tasksMutex.Lock()
-			task.IsRunning = false
+			task.mutex.Lock()
+			// Only mark as not running for non-concurrent tasks
+			if !task.AllowConcurrent {
+				task.IsRunning = false
+			}
 			task.LastRun = time.Now()
 			task.RunCount++
+			task.ConsecutiveFailures = 0 // Reset consecutive failures on success
 			task.LastError = ""
 			task.UpdatedAt = time.Now()
 
-			err = s.updateNextRun(task)
-			if err != nil {
-				log.Error().
-					Err(err).
-					Str("task_name", task.Name).
-					Msg("Failed to update next run time")
+			// For non-concurrent tasks, update next run time after completion
+			// For concurrent tasks, this was already done at the start
+			var nextRunTime time.Time
+			var runCount int64
+			if !task.AllowConcurrent {
+				task.mutex.Unlock()
+				err = s.updateNextRun(task)
+				if err != nil {
+					logger.Error().
+						Err(err).
+						Field("task_name", task.Name).
+						Msg("failed to update next run time")
+				}
+				// Read the values for logging after update
+				task.mutex.RLock()
+				nextRunTime = task.NextRun
+				runCount = task.RunCount
+				task.mutex.RUnlock()
 			}
-			s.tasksMutex.Unlock()
 
-			log.Info().
-				Str("task_name", task.Name).
-				Int64("run_count", task.RunCount).
-				Time("next_run", task.NextRun).
-				Msg("Task executed successfully")
+			if task.AllowConcurrent {
+				nextRunTime = task.NextRun
+				runCount = task.RunCount
+				task.mutex.Unlock()
+			}
+
+			logger.Trace().
+				Field("task_name", task.Name).
+				Field("run_count", runCount).
+				Field("next_run", nextRunTime).
+				Msg("task executed successfully")
 			return
 		}
 
 		lastError = err
-		log.Warn().
-			Err(err).
-			Str("task_name", task.Name).
-			Int("attempt", attempt+1).
-			Msg("Task execution failed")
+		if !task.Quiet || task.ConsecutiveFailures == 0 && task.MaxRetries > 0 {
+			logger.Warn().
+				Err(err).
+				Field("task_name", task.Name).
+				Field("attempt", attempt+1).
+				Msg("task execution failed")
+		}
 
 		if attempt < task.MaxRetries {
 			select {
@@ -409,31 +680,59 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		}
 	}
 
-	s.tasksMutex.Lock()
-	task.IsRunning = false
-	task.LastRun = time.Now()
+	// Handle failure case after all retries exhausted
+	task.mutex.Lock()
+
+	// For non-concurrent tasks, update next run time after completion
+	// For concurrent tasks, this was already done at the start
+	if !task.AllowConcurrent {
+		task.IsRunning = false
+	}
 	task.ErrorCount++
+	task.LastRun = time.Now()
+	task.ConsecutiveFailures++ // Increment consecutive failures
 	task.LastError = lastError.Error()
 	task.UpdatedAt = time.Now()
 
-	err := s.updateNextRun(task)
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("task_name", task.Name).
-			Msg("Failed to update next run time after retries")
-	}
-	s.tasksMutex.Unlock()
+	// Capture values for logging before updating next run
+	errorCount := task.ErrorCount
+	consecutiveFailures := task.ConsecutiveFailures
+	var nextRunTime time.Time
 
-	log.Error().
-		Err(lastError).
-		Str("task_name", task.Name).
-		Int64("error_count", task.ErrorCount).
-		Time("next_run", task.NextRun).
-		Msg("Task execution failed after all retries")
+	if !task.AllowConcurrent {
+		task.mutex.Unlock()
+		err := s.updateNextRun(task)
+		if err != nil {
+			logger.Error().
+				Err(err).
+				Field("task_name", task.Name).
+				Msg("failed to update next run time after retries")
+		}
+		// Read next run time for logging
+		task.mutex.RLock()
+		nextRunTime = task.NextRun
+		task.mutex.RUnlock()
+	}
+
+	if task.AllowConcurrent {
+		nextRunTime = task.NextRun
+		task.mutex.Unlock()
+	}
+
+	if !task.Quiet || consecutiveFailures == 1 {
+		logger.Error().
+			Err(lastError).
+			Field("task_name", task.Name).
+			Field("error_count", errorCount).
+			Field("next_run", nextRunTime).
+			Msg("task execution failed")
+	}
 }
 
 func (s *TaskScheduler) updateNextRun(task *Task) error {
+	task.mutex.Lock()
+	defer task.mutex.Unlock()
+
 	switch task.Type {
 	case TaskTypeCron:
 		nextRun, err := s.calculateNextCronRun(task.CronSpec, time.Now())
@@ -450,15 +749,39 @@ func (s *TaskScheduler) updateNextRun(task *Task) error {
 // GetTask returns a task by name
 func (s *TaskScheduler) GetTask(name string) (*Task, error) {
 	s.tasksMutex.RLock()
-	defer s.tasksMutex.RUnlock()
-
 	task, exists := s.tasks[name]
+	s.tasksMutex.RUnlock()
+
 	if !exists {
 		return nil, apperror.NewError(fmt.Sprintf("task '%s' not found", name))
 	}
 
-	taskCopy := *task
-	return &taskCopy, nil
+	task.mutex.RLock()
+	defer task.mutex.RUnlock()
+	return &Task{
+		ID:                  task.ID,
+		Name:                task.Name,
+		Type:                task.Type,
+		CronSpec:            task.CronSpec,
+		Interval:            task.Interval,
+		Function:            task.Function,
+		NextRun:             task.NextRun,
+		LastRun:             task.LastRun,
+		RunCount:            task.RunCount,
+		ErrorCount:          task.ErrorCount,
+		ConsecutiveFailures: task.ConsecutiveFailures,
+		LastError:           task.LastError,
+		IsRunning:           task.IsRunning,
+		Quiet:               task.Quiet,
+		AllowConcurrent:     task.AllowConcurrent,
+		MaxRetries:          task.MaxRetries,
+		RetryDelay:          task.RetryDelay,
+		Timeout:             task.Timeout,
+		Enabled:             task.Enabled,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+		// Note: mutex is intentionally not copied
+	}, nil
 }
 
 // GetTasks returns all registered tasks
@@ -468,7 +791,34 @@ func (s *TaskScheduler) GetTasks() map[string]*Task {
 
 	tasks := make(map[string]*Task, len(s.tasks))
 	for name, task := range s.tasks {
-		taskCopy := *task
+		// Create a safe copy of each task with proper locking
+		task.mutex.RLock()
+		taskCopy := Task{
+			ID:                  task.ID,
+			Name:                task.Name,
+			Type:                task.Type,
+			CronSpec:            task.CronSpec,
+			Interval:            task.Interval,
+			Function:            task.Function,
+			NextRun:             task.NextRun,
+			LastRun:             task.LastRun,
+			RunCount:            task.RunCount,
+			ErrorCount:          task.ErrorCount,
+			ConsecutiveFailures: task.ConsecutiveFailures,
+			LastError:           task.LastError,
+			IsRunning:           task.IsRunning,
+			Quiet:               task.Quiet,
+			AllowConcurrent:     task.AllowConcurrent,
+			MaxRetries:          task.MaxRetries,
+			RetryDelay:          task.RetryDelay,
+			Timeout:             task.Timeout,
+			Enabled:             task.Enabled,
+			CreatedAt:           task.CreatedAt,
+			UpdatedAt:           task.UpdatedAt,
+			// Note: mutex is intentionally not copied
+		}
+		task.mutex.RUnlock()
+
 		tasks[name] = &taskCopy
 	}
 
@@ -488,9 +838,9 @@ func (s *TaskScheduler) EnableTask(name string) error {
 	task.Enabled = true
 	task.UpdatedAt = time.Now()
 
-	log.Info().
-		Str("task_name", name).
-		Msg("Task enabled")
+	logger.Debug().
+		Field("task_name", name).
+		Msg("task enabled")
 
 	return nil
 }
@@ -508,9 +858,9 @@ func (s *TaskScheduler) DisableTask(name string) error {
 	task.Enabled = false
 	task.UpdatedAt = time.Now()
 
-	log.Info().
-		Str("task_name", name).
-		Msg("Task disabled")
+	logger.Debug().
+		Field("task_name", name).
+		Msg("task disabled")
 
 	return nil
 }
@@ -531,9 +881,90 @@ func (s *TaskScheduler) RemoveTask(name string) error {
 
 	delete(s.tasks, name)
 
-	log.Info().
-		Str("task_name", name).
-		Msg("Task removed")
+	logger.Debug().
+		Field("task_name", name).
+		Msg("task removed")
+
+	return nil
+}
+
+// RescheduleTaskWithCron reschedules an existing task with a new cron specification
+func (s *TaskScheduler) RescheduleTaskWithCron(name, cronSpec string) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if cronSpec == "" {
+		return apperror.NewError("cron specification cannot be empty")
+	}
+
+	if err := s.ValidateCronSpec(cronSpec); err != nil {
+		return apperror.NewError(fmt.Sprintf("invalid cron specification: %v", err))
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	task, exists := s.tasks[name]
+	if !exists {
+		return apperror.NewError(fmt.Sprintf("task '%s' not found", name))
+	}
+
+	if task.IsRunning {
+		return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+	}
+
+	nextRun, err := s.calculateNextCronRun(cronSpec, time.Now())
+	if err != nil {
+		return apperror.NewError(fmt.Sprintf("failed to calculate next run time: %v", err))
+	}
+
+	task.Type = TaskTypeCron
+	task.CronSpec = cronSpec
+	task.Interval = 0 // Clear interval for cron tasks
+	task.NextRun = nextRun
+	task.UpdatedAt = time.Now()
+
+	logger.Trace().
+		Field("task_name", name).
+		Field("cron_spec", cronSpec).
+		Field("next_run", nextRun).
+		Msg("task rescheduled with cron specification")
+
+	return nil
+}
+
+// RescheduleTaskWithInterval reschedules an existing task with a new interval
+func (s *TaskScheduler) RescheduleTaskWithInterval(name string, interval time.Duration) error {
+	if name == "" {
+		return apperror.NewError("task name cannot be empty")
+	}
+	if interval <= 0 {
+		return apperror.NewError("interval must be positive")
+	}
+
+	s.tasksMutex.Lock()
+	defer s.tasksMutex.Unlock()
+
+	task, exists := s.tasks[name]
+	if !exists {
+		return apperror.NewError(fmt.Sprintf("task '%s' not found", name))
+	}
+
+	if task.IsRunning {
+		return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
+	}
+
+	task.Type = TaskTypeInterval
+	task.CronSpec = "" // Clear cron spec for interval tasks
+	task.Interval = interval
+	task.NextRun = time.Now().Add(interval)
+	task.UpdatedAt = time.Now()
+
+	logger.Trace().
+		Field("task_name", name).
+		Field("interval", interval).
+		Field("next_run", task.NextRun).
+		Msg("task rescheduled with interval")
 
 	return nil
 }

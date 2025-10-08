@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/mail"
+	"github.com/valentin-kaiser/go-core/mail"
 )
 
 func TestSMTPSender_Comprehensive(t *testing.T) {
@@ -165,6 +165,7 @@ func TestSMTPSender_SendAsync_NotSupported(t *testing.T) {
 
 func TestSMTPSender_WithRetries(t *testing.T) {
 	config := mail.ClientConfig{
+		Enabled:    true, // Enable the SMTP sender
 		Host:       "nonexistent.smtp.server",
 		Port:       587,
 		From:       "sender@example.com",

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/zlog"
 	"github.com/rs/zerolog"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/zlog"
 )
 
 func TestLogger(t *testing.T) {
@@ -464,7 +464,8 @@ func BenchmarkLoggerWrite(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := logger.Write(message); err != nil {
+		_, err := logger.Write(message)
+		if err != nil {
 			b.Logf("Failed to write log: %v", err)
 		}
 	}

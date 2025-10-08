@@ -5,13 +5,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/mail/internal/email"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/mail/internal/email"
 )
 
 // smtpSender implements the Sender interface using internal email package
@@ -22,6 +23,10 @@ type smtpSender struct {
 
 // NewSMTPSender creates a new SMTP sender with configurable security
 func NewSMTPSender(config ClientConfig, templateManager *TemplateManager) Sender {
+	if config.Enabled {
+		logger.Info().Field("host", config.Host).Field("port", config.Port).Field("encryption", config.Encryption).Msg("SMTP sender enabled")
+	}
+
 	return &smtpSender{
 		config:          config,
 		templateManager: templateManager,
@@ -30,14 +35,20 @@ func NewSMTPSender(config ClientConfig, templateManager *TemplateManager) Sender
 
 // Send sends an email message via SMTP
 func (s *smtpSender) Send(ctx context.Context, message *Message) error {
+	if !s.config.Enabled {
+		return apperror.NewError("SMTP sender is disabled")
+	}
+
 	// Validate message
 	if err := s.validateMessage(message); err != nil {
 		return apperror.Wrap(err)
 	}
 
 	// Process template if specified
-	if err := s.processTemplate(message); err != nil {
-		return apperror.Wrap(err)
+	if s.templateManager != nil && s.templateManager.config.Enabled {
+		if err := s.processTemplate(message); err != nil {
+			return apperror.Wrap(err)
+		}
 	}
 
 	// Create email using internal email package
@@ -49,10 +60,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 	// Send with retries
 	for attempt := 0; attempt <= s.config.MaxRetries; attempt++ {
 		if attempt > 0 {
-			log.Warn().
-				Int("attempt", attempt).
-				Str("message_id", message.ID).
-				Msg("[Mail] Retrying email send")
+			logger.Warn().Field("attempt", attempt).Field("message_id", message.ID).Msg("retrying email send")
 
 			select {
 			case <-ctx.Done():
@@ -67,11 +75,7 @@ func (s *smtpSender) Send(ctx context.Context, message *Message) error {
 			return nil
 		}
 
-		log.Error().
-			Err(err).
-			Int("attempt", attempt).
-			Str("message_id", message.ID).
-			Msg("[Mail] Failed to send email via SMTP")
+		logger.Error().Err(err).Field("attempt", attempt).Field("message_id", message.ID).Msg("failed to send email via SMTP")
 
 		if attempt == s.config.MaxRetries {
 			break
@@ -113,12 +117,12 @@ func (s *smtpSender) processTemplate(message *Message) error {
 		return nil
 	}
 
-	htmlBody, err := s.templateManager.RenderTemplate(message.Template, message.TemplateData)
+	var err error
+	message.HTMLBody, err = s.templateManager.RenderTemplate(message.Template, message.TemplateData, message.TemplateFuncs)
 	if err != nil {
 		return apperror.Wrap(err)
 	}
 
-	message.HTMLBody = htmlBody
 	return nil
 }
 
@@ -223,7 +227,7 @@ func (s *smtpSender) sendEmail(_ context.Context, emailMsg *email.Email) error {
 	}
 
 	// Get server address
-	addr := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
+	addr := net.JoinHostPort(s.config.Host, strconv.Itoa(s.config.Port))
 
 	// Send based on encryption method
 	switch strings.ToUpper(s.config.Encryption) {

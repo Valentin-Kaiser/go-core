@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/mail"
+	"github.com/valentin-kaiser/go-core/mail"
 )
 
 func TestTemplateManager_Comprehensive(t *testing.T) {
@@ -192,7 +192,7 @@ func TestTemplateManager_AutoReload(t *testing.T) {
 	// Create initial template
 	templateContent := `<html><body>{{.Message}}</body></html>`
 	templatePath := filepath.Join(tempDir, "reload.html")
-	if err := os.WriteFile(templatePath, []byte(templateContent), 0644); err != nil {
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
 		t.Fatalf("Failed to write initial template: %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestTemplateManager_AutoReload(t *testing.T) {
 
 	// Update the template file
 	updatedContent := `<html><body><h1>Updated:</h1>{{.Message}}</body></html>`
-	if err := os.WriteFile(templatePath, []byte(updatedContent), 0644); err != nil {
+	if err := os.WriteFile(templatePath, []byte(updatedContent), 0600); err != nil {
 		t.Fatalf("Failed to update template: %v", err)
 	}
 
@@ -261,7 +261,7 @@ func TestTemplateManager_NestedTemplates(t *testing.T) {
 	// Create nested template
 	templateContent := `<html><body><p>{{.Content}}</p></body></html>`
 	templatePath := filepath.Join(subDir, "nested.html")
-	if err := os.WriteFile(templatePath, []byte(templateContent), 0644); err != nil {
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
 		t.Fatalf("Failed to write nested template: %v", err)
 	}
 
@@ -304,7 +304,7 @@ func TestTemplateManager_ErrorHandling(t *testing.T) {
 	// Create template with syntax error
 	badTemplate := `<html><body>{{.InvalidSyntax</body></html>` // Missing closing }}
 	templatePath := filepath.Join(tempDir, "bad.html")
-	if err := os.WriteFile(templatePath, []byte(badTemplate), 0644); err != nil {
+	if err := os.WriteFile(templatePath, []byte(badTemplate), 0600); err != nil {
 		t.Fatalf("Failed to write bad template: %v", err)
 	}
 
@@ -340,7 +340,7 @@ func TestTemplateManager_RenderWithComplexData(t *testing.T) {
 </html>`
 
 	templatePath := filepath.Join(tempDir, "complex.html")
-	if err := os.WriteFile(templatePath, []byte(templateContent), 0644); err != nil {
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
 		t.Fatalf("Failed to write complex template: %v", err)
 	}
 
@@ -389,7 +389,7 @@ func TestTemplateManager_DefaultTemplateFunctions(t *testing.T) {
 	templateContent := `<p>Sum: {{add 5 3}}</p><p>Upper: {{upper "hello"}}</p>`
 
 	templatePath := filepath.Join(tempDir, "functions.html")
-	if err := os.WriteFile(templatePath, []byte(templateContent), 0644); err != nil {
+	if err := os.WriteFile(templatePath, []byte(templateContent), 0600); err != nil {
 		t.Fatalf("Failed to write functions template: %v", err)
 	}
 

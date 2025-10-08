@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/queue"
+	"github.com/valentin-kaiser/go-core/queue"
 )
 
 func TestTaskScheduler_RegisterIntervalTask(t *testing.T) {
@@ -207,8 +207,9 @@ func TestTaskScheduler_TaskRetry(t *testing.T) {
 	}
 
 	err := scheduler.RegisterIntervalTaskWithOptions("retry-task", time.Second*10, taskFunc, queue.TaskOptions{
-		MaxRetries: 3,
-		RetryDelay: time.Millisecond * 30,
+		MaxRetries:  3,
+		RetryDelay:  time.Millisecond * 30,
+		Immediately: true, // Run immediately for this test
 	})
 	if err != nil {
 		t.Fatalf("failed to register task: %v", err)
@@ -271,8 +272,9 @@ func TestTaskScheduler_TaskFailure(t *testing.T) {
 	}
 
 	err := scheduler.RegisterIntervalTaskWithOptions("failing-task", time.Second*5, taskFunc, queue.TaskOptions{
-		MaxRetries: 2,
-		RetryDelay: time.Millisecond * 30,
+		MaxRetries:  2,
+		RetryDelay:  time.Millisecond * 30,
+		Immediately: true, // Run immediately for this test
 	})
 	if err != nil {
 		t.Fatalf("failed to register task: %v", err)
@@ -447,4 +449,288 @@ func TestTaskScheduler_GetTasks(t *testing.T) {
 	if !task.Enabled {
 		t.Error("modifying returned task affected original task")
 	}
+}
+
+func TestTaskScheduler_ConcurrentExecution(t *testing.T) {
+	scheduler := queue.NewTaskScheduler().WithCheckInterval(100 * time.Millisecond)
+
+	var executionCount int32
+	var concurrentCount int32
+	var maxConcurrent int32
+
+	taskFunc := func(_ context.Context) error {
+		// Track concurrent executions
+		current := atomic.AddInt32(&concurrentCount, 1)
+		for {
+			existing := atomic.LoadInt32(&maxConcurrent)
+			if current <= existing || atomic.CompareAndSwapInt32(&maxConcurrent, existing, current) {
+				break
+			}
+		}
+
+		// Simulate work
+		time.Sleep(300 * time.Millisecond)
+
+		atomic.AddInt32(&executionCount, 1)
+		atomic.AddInt32(&concurrentCount, -1)
+		return nil
+	}
+
+	// Test non-concurrent task (default behavior)
+	err := scheduler.RegisterIntervalTask("non-concurrent", 150*time.Millisecond, taskFunc)
+	if err != nil {
+		t.Fatalf("failed to register non-concurrent task: %v", err)
+	}
+
+	// Reset counters
+	atomic.StoreInt32(&executionCount, 0)
+	atomic.StoreInt32(&concurrentCount, 0)
+	atomic.StoreInt32(&maxConcurrent, 0)
+
+	// Test concurrent task
+	err = scheduler.RegisterIntervalTaskWithOptions("concurrent", 150*time.Millisecond, taskFunc, queue.TaskOptions{
+		Concurrent: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to register concurrent task: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = scheduler.Start(ctx)
+	if err != nil {
+		t.Fatalf("failed to start scheduler: %v", err)
+	}
+
+	// Wait for some executions
+	time.Sleep(1 * time.Second)
+	cancel()
+	scheduler.Stop()
+
+	// Verify the concurrent task had overlapping executions
+	finalExecutionCount := atomic.LoadInt32(&executionCount)
+	finalMaxConcurrent := atomic.LoadInt32(&maxConcurrent)
+
+	t.Logf("Total executions: %d, Max concurrent: %d", finalExecutionCount, finalMaxConcurrent)
+
+	if finalExecutionCount < 2 {
+		t.Errorf("expected at least 2 executions, got %d", finalExecutionCount)
+	}
+
+	if finalMaxConcurrent < 2 {
+		t.Errorf("expected at least 2 concurrent executions, got %d", finalMaxConcurrent)
+	}
+
+	// Verify task properties
+	task, err := scheduler.GetTask("concurrent")
+	if err != nil {
+		t.Fatalf("failed to get concurrent task: %v", err)
+	}
+
+	if !task.AllowConcurrent {
+		t.Error("expected AllowConcurrent to be true")
+	}
+
+	task, err = scheduler.GetTask("non-concurrent")
+	if err != nil {
+		t.Fatalf("failed to get non-concurrent task: %v", err)
+	}
+
+	if task.AllowConcurrent {
+		t.Error("expected AllowConcurrent to be false")
+	}
+}
+
+func TestTaskScheduler_ConcurrentCronExecution(t *testing.T) {
+	scheduler := queue.NewTaskScheduler().WithCheckInterval(50 * time.Millisecond)
+
+	var executionCount int32
+	var concurrentCount int32
+	var maxConcurrent int32
+
+	taskFunc := func(_ context.Context) error {
+		// Track concurrent executions
+		current := atomic.AddInt32(&concurrentCount, 1)
+		for {
+			existing := atomic.LoadInt32(&maxConcurrent)
+			if current <= existing || atomic.CompareAndSwapInt32(&maxConcurrent, existing, current) {
+				break
+			}
+		}
+
+		// Simulate work - longer than the cron interval to force overlap
+		time.Sleep(1500 * time.Millisecond)
+
+		atomic.AddInt32(&executionCount, 1)
+		atomic.AddInt32(&concurrentCount, -1)
+		return nil
+	}
+
+	// Test concurrent cron task that runs every second
+	err := scheduler.RegisterCronTaskWithOptions("concurrent-cron", "* * * * * *", taskFunc, queue.TaskOptions{
+		Concurrent: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to register concurrent cron task: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = scheduler.Start(ctx)
+	if err != nil {
+		t.Fatalf("failed to start scheduler: %v", err)
+	}
+
+	// Wait for some executions
+	time.Sleep(3500 * time.Millisecond)
+	cancel()
+	scheduler.Stop()
+
+	// Verify the concurrent task had overlapping executions
+	finalExecutionCount := atomic.LoadInt32(&executionCount)
+	finalMaxConcurrent := atomic.LoadInt32(&maxConcurrent)
+
+	t.Logf("Total cron executions: %d, Max concurrent: %d", finalExecutionCount, finalMaxConcurrent)
+
+	if finalExecutionCount < 2 {
+		t.Errorf("expected at least 2 executions, got %d", finalExecutionCount)
+	}
+
+	if finalMaxConcurrent < 2 {
+		t.Errorf("expected at least 2 concurrent executions, got %d", finalMaxConcurrent)
+	}
+
+	// Verify task properties
+	task, err := scheduler.GetTask("concurrent-cron")
+	if err != nil {
+		t.Fatalf("failed to get concurrent cron task: %v", err)
+	}
+
+	if !task.AllowConcurrent {
+		t.Error("expected AllowConcurrent to be true")
+	}
+
+	if task.Type != queue.TaskTypeCron {
+		t.Errorf("expected task type cron, got %v", task.Type)
+	}
+}
+
+func TestTaskScheduler_RunImmediately(t *testing.T) {
+	scheduler := queue.NewTaskScheduler().WithCheckInterval(50 * time.Millisecond)
+
+	var cronExecutionCount int32
+	var intervalExecutionCount int32
+
+	// Simple task function that increments a counter
+	cronTaskFunc := func(_ context.Context) error {
+		atomic.AddInt32(&cronExecutionCount, 1)
+		return nil
+	}
+
+	intervalTaskFunc := func(_ context.Context) error {
+		atomic.AddInt32(&intervalExecutionCount, 1)
+		return nil
+	}
+
+	// Test cron task with RunImmediately = true
+	err := scheduler.RegisterCronTaskWithOptions("cron-immediate", "*/30 * * * * *", cronTaskFunc, queue.TaskOptions{
+		Immediately: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to register immediate cron task: %v", err)
+	}
+
+	// Test cron task with RunImmediately = false (default)
+	err = scheduler.RegisterCronTaskWithOptions("cron-scheduled", "0 0 * * * *", cronTaskFunc, queue.TaskOptions{
+		Immediately: false,
+	})
+	if err != nil {
+		t.Fatalf("failed to register scheduled cron task: %v", err)
+	}
+
+	// Test interval task with RunImmediately = false
+	err = scheduler.RegisterIntervalTaskWithOptions("interval-scheduled", 2*time.Second, intervalTaskFunc, queue.TaskOptions{
+		Immediately: false,
+	})
+	if err != nil {
+		t.Fatalf("failed to register scheduled interval task: %v", err)
+	}
+
+	// Test interval task with default behavior (should run immediately for backward compatibility)
+	err = scheduler.RegisterIntervalTask("interval-immediate", 2*time.Second, intervalTaskFunc)
+	if err != nil {
+		t.Fatalf("failed to register immediate interval task: %v", err)
+	}
+
+	// Verify next run times before starting
+	cronImmediate, err := scheduler.GetTask("cron-immediate")
+	if err != nil {
+		t.Fatalf("failed to get cron immediate task: %v", err)
+	}
+
+	cronScheduled, err := scheduler.GetTask("cron-scheduled")
+	if err != nil {
+		t.Fatalf("failed to get cron scheduled task: %v", err)
+	}
+
+	intervalScheduled, err := scheduler.GetTask("interval-scheduled")
+	if err != nil {
+		t.Fatalf("failed to get interval scheduled task: %v", err)
+	}
+
+	intervalImmediate, err := scheduler.GetTask("interval-immediate")
+	if err != nil {
+		t.Fatalf("failed to get interval immediate task: %v", err)
+	}
+
+	now := time.Now()
+
+	// Immediate tasks should be scheduled to run now or very soon
+	if cronImmediate.NextRun.After(now.Add(100 * time.Millisecond)) {
+		t.Errorf("cron immediate task should run immediately, but next run is %v", cronImmediate.NextRun)
+	}
+
+	if intervalImmediate.NextRun.After(now.Add(100 * time.Millisecond)) {
+		t.Errorf("interval immediate task should run immediately, but next run is %v", intervalImmediate.NextRun)
+	}
+
+	// Scheduled tasks should be scheduled for later
+	if cronScheduled.NextRun.Before(now.Add(10 * time.Second)) {
+		t.Errorf("cron scheduled task should not run immediately, but next run is %v", cronScheduled.NextRun)
+	}
+
+	if intervalScheduled.NextRun.Before(now.Add(1500 * time.Millisecond)) {
+		t.Errorf("interval scheduled task should not run immediately, but next run is %v", intervalScheduled.NextRun)
+	}
+
+	// Start the scheduler
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = scheduler.Start(ctx)
+	if err != nil {
+		t.Fatalf("failed to start scheduler: %v", err)
+	}
+
+	// Wait a short time to see which tasks execute immediately
+	time.Sleep(500 * time.Millisecond)
+
+	// The immediate tasks should have executed by now
+	cronCount := atomic.LoadInt32(&cronExecutionCount)
+	intervalCount := atomic.LoadInt32(&intervalExecutionCount)
+
+	if cronCount == 0 {
+		t.Error("cron immediate task should have executed by now")
+	}
+
+	if intervalCount == 0 {
+		t.Error("interval immediate task should have executed by now")
+	}
+
+	cancel()
+	scheduler.Stop()
+
+	t.Logf("Cron executions: %d, Interval executions: %d", cronCount, intervalCount)
 }

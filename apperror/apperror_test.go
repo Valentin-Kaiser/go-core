@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/flag"
 )
 
 func TestNewError(t *testing.T) {
@@ -146,6 +146,7 @@ func TestErrorString(t *testing.T) {
 
 	// Test with debug mode
 	flag.Debug = true
+	apperror.Anonymous(true) // Enable anonymous mode to get function names in trace
 	err = apperror.NewError("test error")
 	errorStr := err.Error()
 
@@ -156,6 +157,7 @@ func TestErrorString(t *testing.T) {
 	if !strings.Contains(errorStr, "TestErrorString") {
 		t.Error("Error string should contain trace information in debug mode")
 	}
+	apperror.Anonymous(false) // Reset to default
 }
 
 func TestSplit(t *testing.T) {

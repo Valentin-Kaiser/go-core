@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Valentin-Kaiser/go-core/security"
+	"github.com/valentin-kaiser/go-core/security"
 )
 
 func TestAesCipherEncryptDecrypt(t *testing.T) {

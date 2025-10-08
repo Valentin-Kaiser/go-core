@@ -27,7 +27,7 @@
 //
 //	import (
 //	    "fmt"
-//	    "github.com/Valentin-Kaiser/go-core/config"
+//	    "github.com/valentin-kaiser/go-core/config"
 //	    "github.com/fsnotify/fsnotify"
 //	)
 //
@@ -84,30 +84,39 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/Valentin-Kaiser/go-core/apperror"
-	"github.com/Valentin-Kaiser/go-core/flag"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/pflag"
-
-	"github.com/spf13/viper"
-	"github.com/stoewer/go-strcase"
-	"gopkg.in/yaml.v2"
+	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/logging"
 )
 
 var (
+	logger     = logging.GetPackageLogger("config")
 	mutex      = &sync.RWMutex{}
 	config     Config
-	configname string
-	onChange   []func(o Config, n Config) error
+	configName string
+	configPath string
 	lastChange atomic.Int64
+	prefix     string
+	defaults   map[string]interface{}
+	values     map[string]interface{}
+	flags      map[string]*pflag.Flag
+	onChange   []func(o Config, n Config) error
+	watcher    *fsnotify.Watcher
 )
+
+func init() {
+	defaults = make(map[string]interface{})
+	values = make(map[string]interface{})
+	flags = make(map[string]*pflag.Flag)
+}
 
 // Config is the interface that all configuration structs must implement
 // It should contain a Validate method that checks the configuration for errors
@@ -117,7 +126,7 @@ type Config interface {
 
 // Register registers a configuration struct and parses its tags
 // The name is used as the name of the configuration file and the prefix for the environment variables
-func Register(name string, c Config) error {
+func Register(path, name string, c Config) error {
 	if c == nil {
 		return apperror.NewError("the configuration provided is nil")
 	}
@@ -126,18 +135,18 @@ func Register(name string, c Config) error {
 		return apperror.NewErrorf("the configuration provided is not a pointer to a struct, got %T", c)
 	}
 
-	configname = name
-	viper.SetEnvPrefix(strings.ReplaceAll(configname, "-", "_"))
-	viper.SetTypeByDefaultValue(true)
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	mutex.Lock()
+	configName = name
+	configPath = path
+	prefix = strings.ToUpper(strings.ReplaceAll(configName, "-", "_"))
+	mutex.Unlock()
 
 	err := parseStructTags(reflect.ValueOf(c), "")
 	if err != nil {
 		return apperror.Wrap(err)
 	}
 
-	apply(c)
+	set(c)
 	return nil
 }
 
@@ -156,17 +165,24 @@ func Get() Config {
 // Read reads the configuration from the file, validates it and applies it
 // If the file does not exist, it creates a new one with the default values
 func Read() error {
-	viper.SetConfigName(configname)
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(flag.Path)
+	setConfigName(configName)
+	addConfigPath(flag.Path)
 
-	if err := viper.ReadInConfig(); err != nil {
-		if err := os.MkdirAll(flag.Path, 0750); err != nil {
+	err := read()
+	if err != nil {
+		err := os.MkdirAll(flag.Path, 0750)
+		if err != nil {
 			return apperror.NewError("creating configuration directory failed").AddError(err)
 		}
-		// Write the default config using our own save function instead of viper's SafeWriteConfig
-		if err := save(); err != nil {
+
+		err = save()
+		if err != nil {
 			return apperror.NewError("writing default configuration file failed").AddError(err)
+		}
+
+		err = read()
+		if err != nil {
+			return apperror.NewError("reading configuration file after creation failed").AddError(err)
 		}
 	}
 
@@ -175,7 +191,7 @@ func Read() error {
 		return apperror.NewErrorf("creating new instance of %T failed", config)
 	}
 
-	err := viper.Unmarshal(&change)
+	err = unmarshal(change)
 	if err != nil {
 		return apperror.NewErrorf("unmarshalling configuration data in %T failed", config).AddError(err)
 	}
@@ -186,7 +202,7 @@ func Read() error {
 	}
 
 	o := Get()
-	apply(change)
+	set(change)
 	for _, f := range onChange {
 		err = f(o, change)
 		if err != nil {
@@ -210,7 +226,7 @@ func Write(change Config) error {
 	}
 
 	o := Get()
-	apply(change)
+	set(change)
 	err = save()
 	if err != nil {
 		return apperror.Wrap(err)
@@ -229,189 +245,77 @@ func Write(change Config) error {
 // Watch watches the configuration file for changes and calls the provided function when it changes
 // It ignores changes that happen within 1 second of each other
 // This is to prevent multiple calls when the file is saved
-func Watch(onChange func(fsnotify.Event)) {
-	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
+func Watch() {
+	err := watch(func(_ fsnotify.Event) {
 		if time.Now().UnixMilli()-lastChange.Load() < 1000 {
 			return
 		}
 		lastChange.Store(time.Now().UnixMilli())
-		onChange(e)
-	})
-}
-
-// apply applies the configuration to the global variable
-func apply(appConfig Config) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	config = appConfig
-}
-
-// save saves the configuration to the file
-// If the file does not exist, it creates a new one with the default values
-func save() error {
-	// Ensure the directory exists before trying to create the file
-	if err := os.MkdirAll(flag.Path, 0750); err != nil {
-		return apperror.NewError("creating configuration directory failed").AddError(err)
-	}
-
-	path, err := filepath.Abs(filepath.Join(flag.Path, configname+".yaml"))
-	if err != nil {
-		return apperror.NewError("building absolute path of configuration file failed").AddError(err)
-	}
-	file, err := os.OpenFile(filepath.Clean(path), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		return apperror.NewError("opening configuration file failed").AddError(err)
-	}
-
-	mutex.RLock()
-	defer mutex.RUnlock()
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return apperror.NewError("marshalling configuration data failed").AddError(err)
-	}
-
-	_, err = file.Write(data)
-	if err != nil {
-		return apperror.NewError("writing configuration data to file failed").AddError(err)
-	}
-
-	err = file.Close()
-	if err != nil {
-		return apperror.NewError("closing configuration file failed").AddError(err)
-	}
-
-	return nil
-}
-
-// declareFlag declares a flag with the given label, usage and default value
-// It also binds the flag to viper so that it can be used in the configuration
-func declareFlag(label string, usage string, defaultValue interface{}) error {
-	viper.SetDefault(label, defaultValue)
-	pflagLabel := strcase.KebabCase(label)
-	label = strings.ToLower(label)
-
-	// Check if flag already exists to avoid redefinition errors
-	if pflag.Lookup(pflagLabel) != nil {
-		// Flag already exists, just bind to viper
-		if err := viper.BindPFlag(label, pflag.Lookup(pflagLabel)); err != nil {
-			return apperror.NewErrorf("binding existing flag %s to viper failed", label).AddError(err)
-		}
-		return nil
-	}
-
-	switch v := defaultValue.(type) {
-	case string:
-		pflag.String(pflagLabel, v, usage)
-	case int:
-		pflag.Int(pflagLabel, v, usage)
-	case uint:
-		pflag.Uint(pflagLabel, v, usage)
-	case int8:
-		pflag.Int8(pflagLabel, v, usage)
-	case uint8:
-		pflag.Uint8(pflagLabel, v, usage)
-	case int16:
-		pflag.Int16(pflagLabel, v, usage)
-	case uint16:
-		pflag.Uint16(pflagLabel, v, usage)
-	case int32:
-		pflag.Int32(pflagLabel, v, usage)
-	case uint32:
-		pflag.Uint32(pflagLabel, v, usage)
-	case int64:
-		pflag.Int64(pflagLabel, v, usage)
-	case uint64:
-		pflag.Uint64(pflagLabel, v, usage)
-	case float32:
-		pflag.Float32(pflagLabel, v, usage)
-	case float64:
-		pflag.Float64(pflagLabel, v, usage)
-	case bool:
-		pflag.Bool(pflagLabel, v, usage)
-	case []string:
-		pflag.StringArray(pflagLabel, v, usage)
-	default:
-		return nil
-	}
-
-	if err := viper.BindPFlag(label, pflag.Lookup(pflagLabel)); err != nil {
-		return apperror.NewErrorf("binding flag %s to viper failed", label).AddError(err)
-	}
-
-	return nil
-}
-
-// parseStructTags parses the struct tags of the given struct and registers the flags
-// It also sets the default values of the flags to the values of the struct fields
-func parseStructTags(v reflect.Value, labelBase string) error {
-	// If the config is a pointer, we need to get the type of the element
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	t := v.Type()
-	for i := 0; i < t.NumField(); i++ {
-		// If the field is not exported, we skip it
-		if t.Field(i).PkgPath != "" {
-			continue
-		}
-
-		// If the field is a pointer, we need to dereference it
-		if v.Field(i).Kind() == reflect.Ptr {
-			if v.Field(i).IsNil() {
-				v.Field(i).Set(reflect.New(t.Field(i).Type.Elem()))
-			}
-			err := parseStructTags(v.Field(i).Elem(), t.Field(i).Name)
-			if err != nil {
-				return apperror.Wrap(err)
-			}
-			continue
-		}
-
-		// If the field is a struct, we need to iterate over its fields
-		if t.Field(i).Type.Kind() == reflect.Struct {
-			subv := v.Field(i)
-			if subv.Kind() == reflect.Ptr {
-				subv = subv.Elem()
-			}
-
-			label := ""
-			if labelBase != "" {
-				label += labelBase + "."
-			}
-			label += t.Field(i).Name
-			err := parseStructTags(subv, label)
-			if err != nil {
-				return apperror.Wrap(err)
-			}
-			continue
-		}
-
-		field := t.Field(i)
-		tag := field.Name
-		if labelBase != "" {
-			tag = labelBase + "." + tag
-		}
-
-		err := declareFlag(tag, field.Tag.Get("usage"), v.Field(i).Interface())
+		err := Read()
 		if err != nil {
-			return apperror.Wrap(err)
+			logger.Error().Err(err).Msg("failed to read configuration")
+			return
 		}
+	})
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to setup config watcher")
 	}
-
-	return nil
 }
 
-// Reset clears all global state - primarily for testing purposes
+// Reset clears the config package state
+// Everything must be re-registered after calling this function
 func Reset() {
 	mutex.Lock()
 	defer mutex.Unlock()
+
+	if watcher != nil {
+		watcher.Close()
+		watcher = nil
+	}
+
 	config = nil
-	configname = ""
+	configName = ""
+	configPath = ""
+	prefix = ""
+	defaults = make(map[string]interface{})
+	values = make(map[string]interface{})
+	flags = make(map[string]*pflag.Flag)
 	onChange = nil
 	lastChange.Store(0)
+}
 
-	// Reset viper state
-	viper.Reset()
+// Changed checks if two configuration values are different by comparing their reflection values.
+// It returns true if the configurations differ, false if they are the same.
+// This function handles nil values correctly and performs deep comparison of the underlying values.
+func Changed(o, n any) bool {
+	if o == nil && n == nil {
+		return false
+	}
+
+	if o == nil || n == nil {
+		return true
+	}
+
+	ov := reflect.ValueOf(o)
+	nv := reflect.ValueOf(n)
+
+	if ov.Kind() == reflect.Ptr && !ov.IsNil() {
+		ov = ov.Elem()
+	}
+	if nv.Kind() == reflect.Ptr && !nv.IsNil() {
+		nv = nv.Elem()
+	}
+
+	if ov.Kind() != nv.Kind() {
+		return true
+	}
+
+	return !reflect.DeepEqual(ov.Interface(), nv.Interface())
+}
+
+// set applies the configuration to the global variable
+func set(appConfig Config) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	config = appConfig
 }

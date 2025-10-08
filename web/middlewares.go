@@ -3,10 +3,11 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"time"
 
-	"github.com/Valentin-Kaiser/go-core/flag"
-	"github.com/Valentin-Kaiser/go-core/version"
-	"github.com/rs/zerolog/log"
+	"github.com/valentin-kaiser/go-core/flag"
+	"github.com/valentin-kaiser/go-core/logging"
+	"github.com/valentin-kaiser/go-core/version"
 )
 
 var (
@@ -141,23 +142,29 @@ func logMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(rw, r)
 
-		loglevel := log.Debug
-		if rw.status >= 400 {
-			loglevel = log.Warn
-		}
-		if rw.status >= 500 {
-			loglevel = log.Error
+		// Log the request with appropriate level based on status
+		fields := []logging.Field{
+			logging.F("remote", r.RemoteAddr),
+			logging.F("real-ip", r.Header.Get("X-Real-IP")),
+			logging.F("host", r.Host),
+			logging.F("method", r.Method),
+			logging.F("url", r.URL.String()),
+			logging.F("user-agent", r.UserAgent()),
+			logging.F("referer", r.Referer()),
+			logging.F("status", fmt.Sprintf("%d %s", rw.status, http.StatusText(rw.status))),
+			logging.F("duration", time.Since(rw.start).String()),
 		}
 
-		loglevel().
-			Str("remote", r.RemoteAddr).
-			Str("real-ip", r.Header.Get("X-Real-IP")).
-			Str("host", r.Host).
-			Str("method", r.Method).
-			Str("url", r.URL.String()).
-			Str("user-agent", r.UserAgent()).
-			Str("referer", r.Referer()).
-			Str("status", fmt.Sprintf("%d %s", rw.status, http.StatusText(rw.status))).
-			Msg("request")
+		var event logging.Event
+		switch {
+		case rw.status >= 500:
+			event = logger.Error()
+		case rw.status >= 400:
+			event = logger.Warn()
+		default:
+			event = logger.Debug()
+		}
+
+		event.Fields(fields...).Msg("HTTP request processed")
 	})
 }
