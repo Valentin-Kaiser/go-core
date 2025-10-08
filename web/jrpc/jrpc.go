@@ -80,6 +80,28 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
+// Common error messages to avoid repeated allocations
+var (
+	errMethodNotFound           = apperror.NewError("method not found")
+	errMethodReflectionNotFound = apperror.NewError("method reflection data not found")
+	errInvalidMethodSignature   = errors.New("invalid method signature")
+	errFirstArgMustBeContext    = errors.New("first argument must be context.Context")
+	errSecondReturnMustBeError  = errors.New("second return value must be error")
+	errRequestMustBePointer     = errors.New("request must be a pointer")
+	errNilRequest               = errors.New("nil request")
+	errExpectedProtoMessage     = errors.New("expected proto.Message for request")
+
+	// Cached reflection types to avoid repeated type operations
+	contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
+	errorType   = reflect.TypeOf((*error)(nil)).Elem()
+
+	// Reusable marshal options to avoid allocation
+	marshalOpts = protojson.MarshalOptions{
+		EmitUnpopulated: true,
+		UseProtoNames:   true,
+	}
+)
+
 // upgrader is the WebSocket upgrader with default options
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -112,7 +134,6 @@ const (
 type Service struct {
 	Server
 	methods map[string]*methodInfo                  // cached method information for faster lookup
-	keys    map[string]string                       // pre-computed method keys to avoid string concatenation
 	types   map[protoreflect.FullName]proto.Message // cached message types
 }
 
@@ -140,7 +161,6 @@ func Register(s Server) *Service {
 	service := &Service{
 		Server:  s,
 		methods: make(map[string]*methodInfo),
-		keys:    make(map[string]string),
 		types:   make(map[protoreflect.FullName]proto.Message),
 	}
 
@@ -155,7 +175,6 @@ func Register(s Server) *Service {
 			sn := string(sd.Name())
 
 			key := sn + "." + mn
-			service.keys[mn] = key
 
 			rm := sv.MethodByName(mn)
 			if !rm.IsValid() {
@@ -267,12 +286,24 @@ func (s *Service) unary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.ContentLength > 0 {
-		body, _ := io.ReadAll(r.Body)
-		if len(body) != int(r.ContentLength) {
-			http.Error(w, "body length does not match Content-Length", http.StatusBadRequest)
+		// Use buffer pool for body reading
+		buf := bufferPool.Get().([]byte)
+		defer bufferPool.Put(buf[:0])
+
+		// Ensure buffer is large enough
+		if cap(buf) < int(r.ContentLength) {
+			buf = make([]byte, r.ContentLength)
+		} else {
+			buf = buf[:r.ContentLength]
+		}
+
+		_, err := io.ReadFull(r.Body, buf)
+		if err != nil {
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
 			return
 		}
-		err = protojson.Unmarshal(body, msg)
+
+		err = protojson.Unmarshal(buf, msg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -280,7 +311,7 @@ func (s *Service) unary(w http.ResponseWriter, r *http.Request) {
 	}
 	defer apperror.Catch(r.Body.Close, "closing request body failed")
 
-	resp, err := s.call(ctx, method, msg)
+	resp, err := s.call(ctx, service, method, msg)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -430,21 +461,14 @@ func GetWebSocketConn(ctx context.Context) (*websocket.Conn, bool) {
 	return conn, ok
 }
 
-func (s *Service) call(ctx context.Context, method string, req proto.Message) (any, error) {
-	var methodInfo *methodInfo
-	for key, info := range s.methods {
-		if strings.HasSuffix(key, "."+method) {
-			methodInfo = info
-			break
-		}
-	}
-
-	if methodInfo == nil {
-		return nil, apperror.NewError("method not found")
+func (s *Service) call(ctx context.Context, service, method string, req proto.Message) (any, error) {
+	methodInfo, exists := s.methods[service+"."+method]
+	if !exists {
+		return nil, errMethodNotFound
 	}
 
 	if !methodInfo.method.IsValid() {
-		return nil, apperror.NewError("method reflection data not found")
+		return nil, errMethodReflectionNotFound
 	}
 
 	m := methodInfo.method
@@ -453,25 +477,25 @@ func (s *Service) call(ctx context.Context, method string, req proto.Message) (a
 	// Validate method signature if not already validated
 	if !methodInfo.validated {
 		if mt.NumIn() != 2 || mt.NumOut() != 2 {
-			return nil, errors.New("invalid method signature")
+			return nil, errInvalidMethodSignature
 		}
-		if !mt.In(0).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
-			return nil, errors.New("first argument must be context.Context")
+		if !mt.In(0).Implements(contextType) {
+			return nil, errFirstArgMustBeContext
 		}
-		if !mt.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-			return nil, errors.New("second return value must be error")
+		if !mt.Out(1).Implements(errorType) {
+			return nil, errSecondReturnMustBeError
 		}
 		methodInfo.validated = true
 	}
 
 	wanted := mt.In(1)
 	if wanted.Kind() != reflect.Ptr {
-		return nil, errors.New("request must be a pointer")
+		return nil, errRequestMustBePointer
 	}
 
 	reqVal := reflect.ValueOf(req)
 	if !reqVal.IsValid() {
-		return nil, errors.New("nil request")
+		return nil, errNilRequest
 	}
 
 	if !reqVal.Type().AssignableTo(wanted) {
@@ -487,7 +511,7 @@ func (s *Service) call(ctx context.Context, method string, req proto.Message) (a
 		}
 		pm, ok := reqPtr.Interface().(proto.Message)
 		if !ok {
-			return nil, errors.New("expected proto.Message for request")
+			return nil, errExpectedProtoMessage
 		}
 		if err := protojson.Unmarshal(b, pm); err != nil {
 			return nil, err
@@ -505,14 +529,9 @@ func (s *Service) call(ctx context.Context, method string, req proto.Message) (a
 }
 
 func (s *Service) find(service, method string) (*methodInfo, error) {
-	key, exists := s.keys[method]
+	md, exists := s.methods[service+"."+method]
 	if !exists {
-		return nil, apperror.NewError("method not found")
-	}
-
-	md, exists := s.methods[key]
-	if !exists {
-		return nil, apperror.NewError("method not found")
+		return nil, errMethodNotFound
 	}
 
 	return md, nil
@@ -528,18 +547,12 @@ func (s *Service) message(md *methodInfo) (proto.Message, error) {
 
 func (s *Service) marshal(v any) ([]byte, error) {
 	if pm, ok := v.(proto.Message); ok {
-		return protojson.MarshalOptions{
-			EmitUnpopulated: true,
-			UseProtoNames:   true,
-		}.Marshal(pm)
+		return marshalOpts.Marshal(pm)
 	}
 	rv := reflect.ValueOf(v)
 	if rv.IsValid() && rv.CanAddr() {
 		if pm, ok := rv.Addr().Interface().(proto.Message); ok {
-			return protojson.MarshalOptions{
-				EmitUnpopulated: true,
-				UseProtoNames:   true,
-			}.Marshal(pm)
+			return marshalOpts.Marshal(pm)
 		}
 	}
 	// Handle non-pointer values by creating a pointer to them
@@ -550,10 +563,7 @@ func (s *Service) marshal(v any) ([]byte, error) {
 			newPtr := reflect.New(rv.Type())
 			newPtr.Elem().Set(rv)
 			if pm, ok := newPtr.Interface().(proto.Message); ok {
-				return protojson.MarshalOptions{
-					EmitUnpopulated: true,
-					UseProtoNames:   true,
-				}.Marshal(pm)
+				return marshalOpts.Marshal(pm)
 			}
 		}
 	}
@@ -871,9 +881,6 @@ const (
 
 // validateMethodSignature validates and determines the streaming type of a method
 func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.MethodDescriptor) (StreamingType, error) {
-	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
-	errorType := reflect.TypeOf((*error)(nil)).Elem()
-
 	// Basic validation: must have at least context parameter and error return
 	if mt.NumIn() < 1 || !mt.In(0).Implements(contextType) {
 		return StreamingTypeInvalid, errors.New("first parameter must be context.Context")
