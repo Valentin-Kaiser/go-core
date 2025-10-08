@@ -67,6 +67,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -83,6 +84,13 @@ import (
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow connections from any origin
+	},
+}
+
+// bufferPool provides a pool of byte buffers for JSON operations
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 0, 1024) // Pre-allocate 1KB buffers
 	},
 }
 
@@ -103,7 +111,9 @@ const (
 // protocol buffer message handling, and context enrichment.
 type Service struct {
 	Server
-	methods map[string]protoreflect.MethodDescriptor // cached method descriptors for faster lookup
+	methods map[string]*methodInfo                  // cached method information for faster lookup
+	keys    map[string]string                       // pre-computed method keys to avoid string concatenation
+	types   map[protoreflect.FullName]proto.Message // cached message types
 }
 
 // Server represents a jRPC service implementation.
@@ -112,25 +122,74 @@ type Server interface {
 	Descriptor() protoreflect.FileDescriptor
 }
 
+// methodInfo holds cached reflection and protobuf information for a method
+type methodInfo struct {
+	descriptor  protoreflect.MethodDescriptor
+	method      reflect.Value
+	reflectType reflect.Type
+	inputType   reflect.Type
+	outputType  reflect.Type
+	messageType proto.Message
+	validated   bool
+}
+
 // Register creates a new jrpc service instance and registers the provided
 // service implementation. The service implementation has to implement the Descriptor method.
 // This function builds a method cache for improved lookup performance.
 func Register(s Server) *Service {
 	service := &Service{
 		Server:  s,
-		methods: make(map[string]protoreflect.MethodDescriptor),
+		methods: make(map[string]*methodInfo),
+		keys:    make(map[string]string),
+		types:   make(map[protoreflect.FullName]proto.Message),
 	}
 
-	// Build the methods cache
+	sv := reflect.ValueOf(s)
 	services := s.Descriptor().Services()
 	for i := 0; i < services.Len(); i++ {
-		serviceDesc := services.Get(i)
-		methods := serviceDesc.Methods()
+		sd := services.Get(i)
+		methods := sd.Methods()
 		for j := 0; j < methods.Len(); j++ {
-			methodDesc := methods.Get(j)
-			// Use fully qualified method name as key: service.method
-			key := string(serviceDesc.Name()) + "." + string(methodDesc.Name())
-			service.methods[key] = methodDesc
+			md := methods.Get(j)
+			mn := string(md.Name())
+			sn := string(sd.Name())
+
+			key := sn + "." + mn
+			service.keys[mn] = key
+
+			rm := sv.MethodByName(mn)
+			if !rm.IsValid() {
+				continue
+			}
+
+			mt := rm.Type()
+
+			var pm proto.Message
+			if mt, err := protoregistry.GlobalTypes.FindMessageByName(md.Input().FullName()); err == nil {
+				pm = mt.New().Interface()
+				service.types[md.Input().FullName()] = pm
+			} else {
+				pm = dynamicpb.NewMessage(md.Input())
+				service.types[md.Input().FullName()] = pm
+			}
+
+			var it, ot reflect.Type
+			if mt.NumIn() >= 2 {
+				it = mt.In(1)
+			}
+			if mt.NumOut() >= 1 {
+				ot = mt.Out(0)
+			}
+
+			service.methods[key] = &methodInfo{
+				descriptor:  md,
+				method:      rm,
+				reflectType: mt,
+				inputType:   it,
+				outputType:  ot,
+				messageType: pm,
+				validated:   false,
+			}
 		}
 	}
 
@@ -173,10 +232,10 @@ func (s *Service) HandlerFunc(w http.ResponseWriter, r *http.Request) {
 }
 
 // isWebSocketRequest checks if the HTTP request is requesting a WebSocket upgrade
+// Optimized version with reduced string allocations
 func (s *Service) isWebSocketRequest(r *http.Request) bool {
-	connection := strings.ToLower(r.Header.Get("Connection"))
-	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
-	return strings.Contains(connection, "upgrade") && upgrade == "websocket"
+	return strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") &&
+		strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
 }
 
 // unary processes HTTP POST requests to API endpoints.
@@ -266,14 +325,15 @@ func (s *Service) websocket(w http.ResponseWriter, r *http.Request, conn *websoc
 		return
 	}
 
-	m := reflect.ValueOf(s.Server).MethodByName(method)
-	if !m.IsValid() {
-		s.closeWS(conn, websocket.CloseInternalServerErr, "method not found")
+	if !md.method.IsValid() {
+		s.closeWS(conn, websocket.CloseInternalServerErr, "service not registered")
 		return
 	}
-	mt := m.Type()
 
-	streamingType, err := s.validateMethodSignature(mt, md)
+	m := md.method
+	mt := md.reflectType
+
+	streamingType, err := s.validateMethodSignature(mt, md.descriptor)
 	if err != nil {
 		s.closeWS(conn, websocket.CloseInternalServerErr, "invalid method signature: "+err.Error())
 		return
@@ -371,20 +431,37 @@ func GetWebSocketConn(ctx context.Context) (*websocket.Conn, bool) {
 }
 
 func (s *Service) call(ctx context.Context, method string, req proto.Message) (any, error) {
-	m := reflect.ValueOf(s.Server).MethodByName(method)
-	if !m.IsValid() {
+	var methodInfo *methodInfo
+	for key, info := range s.methods {
+		if strings.HasSuffix(key, "."+method) {
+			methodInfo = info
+			break
+		}
+	}
+
+	if methodInfo == nil {
 		return nil, apperror.NewError("method not found")
 	}
 
-	mt := m.Type()
-	if mt.NumIn() != 2 || mt.NumOut() != 2 {
-		return nil, errors.New("invalid method signature")
+	if !methodInfo.method.IsValid() {
+		return nil, apperror.NewError("method reflection data not found")
 	}
-	if !mt.In(0).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
-		return nil, errors.New("first argument must be context.Context")
-	}
-	if !mt.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
-		return nil, errors.New("second return value must be error")
+
+	m := methodInfo.method
+	mt := methodInfo.reflectType
+
+	// Validate method signature if not already validated
+	if !methodInfo.validated {
+		if mt.NumIn() != 2 || mt.NumOut() != 2 {
+			return nil, errors.New("invalid method signature")
+		}
+		if !mt.In(0).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
+			return nil, errors.New("first argument must be context.Context")
+		}
+		if !mt.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+			return nil, errors.New("second return value must be error")
+		}
+		methodInfo.validated = true
 	}
 
 	wanted := mt.In(1)
@@ -399,6 +476,10 @@ func (s *Service) call(ctx context.Context, method string, req proto.Message) (a
 
 	if !reqVal.Type().AssignableTo(wanted) {
 		// Convert via JSON round-trip using protojson to the expected type.
+		// Use buffer pool for better performance
+		buf := bufferPool.Get().([]byte)
+		defer bufferPool.Put(buf[:0])
+
 		reqPtr := reflect.New(wanted.Elem())
 		b, err := protojson.Marshal(req)
 		if err != nil {
@@ -423,34 +504,26 @@ func (s *Service) call(ctx context.Context, method string, req proto.Message) (a
 	return res, err
 }
 
-func (s *Service) find(service, method string) (protoreflect.MethodDescriptor, error) {
-	// Use cached method lookup for better performance
-	key := service + "." + method
-	if md, exists := s.methods[key]; exists {
-		return md, nil
-	}
-
-	// Fallback to dynamic lookup if not found in cache (should not happen in normal operation)
-	sd := s.Descriptor().Services().ByName(protoreflect.Name(service))
-	if sd == nil {
-		return nil, apperror.NewError("service not found")
-	}
-
-	md := sd.Methods().ByName(protoreflect.Name(method))
-	if md == nil {
+func (s *Service) find(service, method string) (*methodInfo, error) {
+	key, exists := s.keys[method]
+	if !exists {
 		return nil, apperror.NewError("method not found")
 	}
+
+	md, exists := s.methods[key]
+	if !exists {
+		return nil, apperror.NewError("method not found")
+	}
+
 	return md, nil
 }
 
-func (s *Service) message(md protoreflect.MethodDescriptor) (proto.Message, error) {
-	mt, err := protoregistry.GlobalTypes.FindMessageByName(md.Input().FullName())
-	if err != nil {
-		log.Error().Err(err).Msg("failed to find message type")
-		return dynamicpb.NewMessage(md.Input()), nil
+func (s *Service) message(md *methodInfo) (proto.Message, error) {
+	if md.messageType == nil {
+		return nil, apperror.NewError("message type not found")
 	}
 
-	return mt.New().Interface(), nil
+	return proto.Clone(md.messageType), nil
 }
 
 func (s *Service) marshal(v any) ([]byte, error) {
@@ -530,7 +603,7 @@ func (s *Service) handleBidirectionalStream(ctx context.Context, conn *websocket
 }
 
 // handleServerStream handles server streaming WebSocket connections
-func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type, md protoreflect.MethodDescriptor) {
+func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, m reflect.Value, mt reflect.Type, md *methodInfo) {
 	outType := mt.In(2)
 	outPtr := outType.Elem()
 	out := reflect.MakeChan(outType, 0)
