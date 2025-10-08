@@ -62,6 +62,7 @@ type Task struct {
 	Enabled             bool          `json:"enabled"`
 	CreatedAt           time.Time     `json:"created_at"`
 	UpdatedAt           time.Time     `json:"updated_at"`
+	mutex               sync.RWMutex  `json:"-"`
 }
 
 // TaskScheduler manages background tasks
@@ -300,7 +301,11 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 	existingTask, exists := s.tasks[name]
 	if exists {
 		// Task exists, reschedule it
-		if existingTask.IsRunning {
+		existingTask.mutex.RLock()
+		isRunning := existingTask.IsRunning
+		existingTask.mutex.RUnlock()
+
+		if isRunning {
 			return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
 		}
 
@@ -309,10 +314,10 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 			return apperror.NewError(fmt.Sprintf("failed to calculate next run time: %v", err))
 		}
 
-		// Update existing task
+		existingTask.mutex.Lock()
 		existingTask.Type = TaskTypeCron
 		existingTask.CronSpec = cronSpec
-		existingTask.Interval = 0 // Clear interval for cron tasks
+		existingTask.Interval = 0
 		existingTask.Function = fn
 		existingTask.NextRun = nextRun
 		existingTask.UpdatedAt = time.Now()
@@ -329,11 +334,13 @@ func (s *TaskScheduler) RegisterOrRescheduleCronTaskWithOptions(name, cronSpec s
 		}
 		existingTask.AllowConcurrent = options.Concurrent
 		existingTask.Quiet = options.Quiet
+		nextRunForLog := existingTask.NextRun
+		existingTask.mutex.Unlock()
 
 		logger.Trace().
 			Field("task_name", name).
 			Field("cron_spec", cronSpec).
-			Field("next_run", nextRun).
+			Field("next_run", nextRunForLog).
 			Msg("existing cron task rescheduled")
 
 		return nil
@@ -402,19 +409,22 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 
 	existingTask, exists := s.tasks[name]
 	if exists {
-		// Task exists, reschedule it
-		if existingTask.IsRunning {
+		existingTask.mutex.RLock()
+		isRunning := existingTask.IsRunning
+		existingTask.mutex.RUnlock()
+
+		if isRunning {
 			return apperror.NewError(fmt.Sprintf("cannot reschedule running task '%s'", name))
 		}
 
-		// Update existing task
+		existingTask.mutex.Lock()
 		existingTask.Type = TaskTypeInterval
 		existingTask.CronSpec = "" // Clear cron spec for interval tasks
 		existingTask.Interval = interval
 		existingTask.Function = fn
 		existingTask.NextRun = time.Now().Add(interval)
 		existingTask.UpdatedAt = time.Now()
-		// Update options if provided
+
 		if options.MaxRetries >= 0 { // Allow explicit 0 to disable retries
 			existingTask.MaxRetries = options.MaxRetries
 		}
@@ -426,11 +436,13 @@ func (s *TaskScheduler) RegisterOrRescheduleIntervalTaskWithOptions(name string,
 		}
 		existingTask.AllowConcurrent = options.Concurrent
 		existingTask.Quiet = options.Quiet
+		nextRunForLog := existingTask.NextRun
+		existingTask.mutex.Unlock()
 
 		logger.Trace().
 			Field("task_name", name).
 			Field("interval", interval).
-			Field("next_run", existingTask.NextRun).
+			Field("next_run", nextRunForLog).
 			Msg("existing interval task rescheduled")
 
 		return nil
@@ -536,8 +548,15 @@ func (s *TaskScheduler) checkAndRunTasks(ctx context.Context) {
 	now := time.Now()
 
 	for _, task := range s.tasks {
+		task.mutex.RLock()
+		enabled := task.Enabled
+		nextRun := task.NextRun
+		isRunning := task.IsRunning
+		allowConcurrent := task.AllowConcurrent
+		task.mutex.RUnlock()
+
 		// Run task if it's enabled, scheduled to run, and either not running or concurrent execution is allowed
-		if task.Enabled && now.After(task.NextRun) && (!task.IsRunning || task.AllowConcurrent) {
+		if enabled && now.After(nextRun) && (!isRunning || allowConcurrent) {
 			tasksToRun = append(tasksToRun, task)
 		}
 	}
@@ -553,7 +572,6 @@ func (s *TaskScheduler) checkAndRunTasks(ctx context.Context) {
 func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 	defer s.workerWg.Done()
 
-	s.tasksMutex.Lock()
 	// For concurrent tasks, update next run time immediately so next instance can be scheduled
 	// For non-concurrent tasks, set running state to prevent overlapping executions
 	if task.AllowConcurrent {
@@ -565,10 +583,17 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 				Msg("failed to update next run time before execution")
 		}
 	} else {
+		task.mutex.Lock()
 		task.IsRunning = true
+		task.UpdatedAt = time.Now()
+		task.mutex.Unlock()
 	}
-	task.UpdatedAt = time.Now()
-	s.tasksMutex.Unlock()
+
+	if task.AllowConcurrent {
+		task.mutex.Lock()
+		task.UpdatedAt = time.Now()
+		task.mutex.Unlock()
+	}
 
 	taskCtx, cancel := context.WithTimeout(ctx, task.Timeout)
 	defer cancel()
@@ -590,7 +615,7 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		err := task.Function(taskCtx)
 
 		if err == nil {
-			s.tasksMutex.Lock()
+			task.mutex.Lock()
 			// Only mark as not running for non-concurrent tasks
 			if !task.AllowConcurrent {
 				task.IsRunning = false
@@ -599,9 +624,14 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 			task.RunCount++
 			task.ConsecutiveFailures = 0 // Reset consecutive failures on success
 			task.LastError = ""
-			task.UpdatedAt = time.Now() // For non-concurrent tasks, update next run time after completion
+			task.UpdatedAt = time.Now()
+
+			// For non-concurrent tasks, update next run time after completion
 			// For concurrent tasks, this was already done at the start
+			var nextRunTime time.Time
+			var runCount int64
 			if !task.AllowConcurrent {
+				task.mutex.Unlock()
 				err = s.updateNextRun(task)
 				if err != nil {
 					logger.Error().
@@ -609,13 +639,21 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 						Field("task_name", task.Name).
 						Msg("failed to update next run time")
 				}
+				// Read the values for logging after update
+				task.mutex.RLock()
+				nextRunTime = task.NextRun
+				runCount = task.RunCount
+				task.mutex.RUnlock()
+			} else {
+				nextRunTime = task.NextRun
+				runCount = task.RunCount
+				task.mutex.Unlock()
 			}
-			s.tasksMutex.Unlock()
 
 			logger.Trace().
 				Field("task_name", task.Name).
-				Field("run_count", task.RunCount).
-				Field("next_run", task.NextRun).
+				Field("run_count", runCount).
+				Field("next_run", nextRunTime).
 				Msg("task executed successfully")
 			return
 		}
@@ -638,12 +676,27 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 		}
 	}
 
-	s.tasksMutex.Lock()
+	// Handle failure case after all retries exhausted
+	task.mutex.Lock()
 
 	// For non-concurrent tasks, update next run time after completion
 	// For concurrent tasks, this was already done at the start
 	if !task.AllowConcurrent {
 		task.IsRunning = false
+	}
+	task.ErrorCount++
+	task.LastRun = time.Now()
+	task.ConsecutiveFailures++ // Increment consecutive failures
+	task.LastError = lastError.Error()
+	task.UpdatedAt = time.Now()
+
+	// Capture values for logging before updating next run
+	errorCount := task.ErrorCount
+	consecutiveFailures := task.ConsecutiveFailures
+	var nextRunTime time.Time
+
+	if !task.AllowConcurrent {
+		task.mutex.Unlock()
 		err := s.updateNextRun(task)
 		if err != nil {
 			logger.Error().
@@ -651,25 +704,29 @@ func (s *TaskScheduler) runTask(ctx context.Context, task *Task) {
 				Field("task_name", task.Name).
 				Msg("failed to update next run time after retries")
 		}
+		// Read next run time for logging
+		task.mutex.RLock()
+		nextRunTime = task.NextRun
+		task.mutex.RUnlock()
+	} else {
+		nextRunTime = task.NextRun
+		task.mutex.Unlock()
 	}
-	task.ErrorCount++
-	if !task.Quiet || task.ConsecutiveFailures == 0 {
+
+	if !task.Quiet || consecutiveFailures == 1 {
 		logger.Error().
 			Err(lastError).
 			Field("task_name", task.Name).
-			Field("error_count", task.ErrorCount).
-			Field("next_run", task.NextRun).
+			Field("error_count", errorCount).
+			Field("next_run", nextRunTime).
 			Msg("task execution failed")
 	}
-
-	task.LastRun = time.Now()
-	task.ConsecutiveFailures++ // Increment consecutive failures
-	task.LastError = lastError.Error()
-	task.UpdatedAt = time.Now()
-	s.tasksMutex.Unlock()
 }
 
 func (s *TaskScheduler) updateNextRun(task *Task) error {
+	task.mutex.Lock()
+	defer task.mutex.Unlock()
+
 	switch task.Type {
 	case TaskTypeCron:
 		nextRun, err := s.calculateNextCronRun(task.CronSpec, time.Now())
@@ -686,15 +743,39 @@ func (s *TaskScheduler) updateNextRun(task *Task) error {
 // GetTask returns a task by name
 func (s *TaskScheduler) GetTask(name string) (*Task, error) {
 	s.tasksMutex.RLock()
-	defer s.tasksMutex.RUnlock()
-
 	task, exists := s.tasks[name]
+	s.tasksMutex.RUnlock()
+
 	if !exists {
 		return nil, apperror.NewError(fmt.Sprintf("task '%s' not found", name))
 	}
 
-	taskCopy := *task
-	return &taskCopy, nil
+	task.mutex.RLock()
+	defer task.mutex.RUnlock()
+	return &Task{
+		ID:                  task.ID,
+		Name:                task.Name,
+		Type:                task.Type,
+		CronSpec:            task.CronSpec,
+		Interval:            task.Interval,
+		Function:            task.Function,
+		NextRun:             task.NextRun,
+		LastRun:             task.LastRun,
+		RunCount:            task.RunCount,
+		ErrorCount:          task.ErrorCount,
+		ConsecutiveFailures: task.ConsecutiveFailures,
+		LastError:           task.LastError,
+		IsRunning:           task.IsRunning,
+		Quiet:               task.Quiet,
+		AllowConcurrent:     task.AllowConcurrent,
+		MaxRetries:          task.MaxRetries,
+		RetryDelay:          task.RetryDelay,
+		Timeout:             task.Timeout,
+		Enabled:             task.Enabled,
+		CreatedAt:           task.CreatedAt,
+		UpdatedAt:           task.UpdatedAt,
+		// Note: mutex is intentionally not copied
+	}, nil
 }
 
 // GetTasks returns all registered tasks
@@ -704,7 +785,34 @@ func (s *TaskScheduler) GetTasks() map[string]*Task {
 
 	tasks := make(map[string]*Task, len(s.tasks))
 	for name, task := range s.tasks {
-		taskCopy := *task
+		// Create a safe copy of each task with proper locking
+		task.mutex.RLock()
+		taskCopy := Task{
+			ID:                  task.ID,
+			Name:                task.Name,
+			Type:                task.Type,
+			CronSpec:            task.CronSpec,
+			Interval:            task.Interval,
+			Function:            task.Function,
+			NextRun:             task.NextRun,
+			LastRun:             task.LastRun,
+			RunCount:            task.RunCount,
+			ErrorCount:          task.ErrorCount,
+			ConsecutiveFailures: task.ConsecutiveFailures,
+			LastError:           task.LastError,
+			IsRunning:           task.IsRunning,
+			Quiet:               task.Quiet,
+			AllowConcurrent:     task.AllowConcurrent,
+			MaxRetries:          task.MaxRetries,
+			RetryDelay:          task.RetryDelay,
+			Timeout:             task.Timeout,
+			Enabled:             task.Enabled,
+			CreatedAt:           task.CreatedAt,
+			UpdatedAt:           task.UpdatedAt,
+			// Note: mutex is intentionally not copied
+		}
+		task.mutex.RUnlock()
+
 		tasks[name] = &taskCopy
 	}
 
