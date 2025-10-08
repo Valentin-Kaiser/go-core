@@ -643,7 +643,7 @@ func TestTaskScheduler_RunImmediately(t *testing.T) {
 	}
 
 	// Test cron task with RunImmediately = false (default)
-	err = scheduler.RegisterCronTaskWithOptions("cron-scheduled", "*/30 * * * * *", cronTaskFunc, queue.TaskOptions{
+	err = scheduler.RegisterCronTaskWithOptions("cron-scheduled", "0 0 * * * *", cronTaskFunc, queue.TaskOptions{
 		Immediately: false,
 	})
 	if err != nil {
