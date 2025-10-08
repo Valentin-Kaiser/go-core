@@ -14,10 +14,12 @@
 // typically in the `main` function of the application. If the `--help` flag is
 // set, it prints usage information and exits.
 //
-// Additional flags can be registered using `RegisterFlag`, which accepts the flag
+// Additional flags can be registered using `Register`, which accepts the flag
 // name, a pointer to the variable to populate, and a usage description.
 // Existing flags can be overridden using `Override`, which allows changing the
 // variable, default value, and description of an already registered flag.
+// Flags can be removed using `Unregister`, which removes a previously
+// registered flag from the command line.
 // Supported types include strings, booleans, integers, unsigned integers, and floats.
 //
 // Example:
@@ -32,11 +34,14 @@
 //	var CustomFlag string
 //
 //	func main() {
-//		flag.RegisterFlag("custom", &CustomFlag, "A custom flag for demonstration")
+//		flag.Register("custom", &CustomFlag, "A custom flag for demonstration")
 //
 //		// Override the default path flag
 //		flag.Path = "/new/default/path"
 //		flag.Override("path", &flag.Path, "Updated application working directory")
+//
+//		// Unregister a flag if no longer needed
+//		flag.Unregister("custom")
 //
 //		flag.Init()
 //
@@ -83,9 +88,9 @@ func PrintHelp() {
 	pflag.PrintDefaults()
 }
 
-// RegisterFlag registers a new flag with the given name, value and usage
+// Register registers a new flag with the given name, value and usage
 // It panics if the flag is already registered or if the value is not a pointer
-func RegisterFlag(name string, value interface{}, usage string) {
+func Register(name string, value interface{}, usage string) {
 	if pflag.Lookup(name) != nil {
 		panic(fmt.Sprintf("flag %s already registered", name))
 	}
@@ -195,6 +200,29 @@ func Override(name string, value interface{}, usage string) {
 	default:
 		panic(fmt.Sprintf("unsupported type %T", v))
 	}
+
+	pflag.CommandLine = newCommandLine
+}
+
+// Unregister removes a previously registered flag
+// It panics if the flag is not registered or if flags have already been parsed
+func Unregister(name string) {
+	if pflag.Lookup(name) == nil {
+		panic(fmt.Sprintf("flag %s is not registered", name))
+	}
+
+	if pflag.Parsed() {
+		panic(fmt.Sprintf("cannot unregister flag %s after flags have been parsed", name))
+	}
+
+	newCommandLine := pflag.NewFlagSet("", pflag.ContinueOnError)
+
+	// Copy all flags except the one we're unregistering
+	pflag.CommandLine.VisitAll(func(flag *pflag.Flag) {
+		if flag.Name != name {
+			newCommandLine.AddFlag(flag)
+		}
+	})
 
 	pflag.CommandLine = newCommandLine
 }
