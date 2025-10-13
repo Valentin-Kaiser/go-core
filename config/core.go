@@ -256,6 +256,7 @@ func Read() error {
 // Write writes the configuration to the file, validates it and applies it
 // If the file does not exist, it creates a new one with the default values
 // The config path is resolved from flag.Path when this function is called
+// Write will not trigger any OnChange handlers unless the configuration is Read again
 func Write(change Config) error {
 	if change == nil {
 		return apperror.NewError("the configuration provided is nil")
@@ -273,24 +274,16 @@ func Write(change Config) error {
 		return apperror.Wrap(err)
 	}
 
-	o := Get()
 	cm.set(change)
 	err = cm.save()
 	if err != nil {
 		return apperror.Wrap(err)
 	}
 
-	for _, f := range cm.onChange {
-		err = f(o, change)
-		if err != nil {
-			return apperror.Wrap(err)
-		}
-	}
-
 	return nil
 }
 
-// Watch watches the configuration file for changes and calls the provided function when it changes
+// Watch watches the configuration file for changes and calls Read when it changes
 // It ignores changes that happen within 1 second of each other
 // This is to prevent multiple calls when the file is saved
 func Watch() {
