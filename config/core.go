@@ -28,6 +28,7 @@
 //	import (
 //	    "fmt"
 //	    "github.com/valentin-kaiser/go-core/config"
+//	    "github.com/valentin-kaiser/go-core/flag"
 //	    "github.com/fsnotify/fsnotify"
 //	)
 //
@@ -60,11 +61,16 @@
 //	        Port: 8080,
 //	    }
 //
-//	    if err := config.Register("server", cfg); err != nil {
+//	    // Register config - path parameter is ignored, flag.Path will be used
+//	    if err := config.Register("", "server", cfg); err != nil {
 //	        fmt.Println("Error registering config:", err)
 //	        return
 //	    }
 //
+//	    // Parse flags (including --path and config-specific flags)
+//	    flag.Init()
+//
+//	    // Read config using the parsed --path flag
 //	    if err := config.Read(); err != nil {
 //	        fmt.Println("Error reading config:", err)
 //	        return
@@ -98,25 +104,15 @@ import (
 )
 
 var (
-	logger     = logging.GetPackageLogger("config")
-	mutex      = &sync.RWMutex{}
-	config     Config
-	configName string
-	configPath string
-	lastChange atomic.Int64
-	prefix     string
-	defaults   map[string]interface{}
-	values     map[string]interface{}
-	flags      map[string]*pflag.Flag
-	onChange   []func(o Config, n Config) error
-	watcher    *fsnotify.Watcher
+	logger = logging.GetPackageLogger("config")
+	mutex  = &sync.RWMutex{}
+	cm     = &manager{
+		name:     "config",
+		defaults: make(map[string]interface{}),
+		values:   make(map[string]interface{}),
+		flags:    make(map[string]*pflag.Flag),
+	}
 )
-
-func init() {
-	defaults = make(map[string]interface{})
-	values = make(map[string]interface{})
-	flags = make(map[string]*pflag.Flag)
-}
 
 // Config is the interface that all configuration structs must implement
 // It should contain a Validate method that checks the configuration for errors
@@ -124,9 +120,52 @@ type Config interface {
 	Validate() error
 }
 
+type manager struct {
+	path       string
+	name       string
+	config     Config
+	lastChange atomic.Int64
+	prefix     string
+	defaults   map[string]interface{}
+	values     map[string]interface{}
+	flags      map[string]*pflag.Flag
+	onChange   []func(o Config, n Config) error
+	watcher    *fsnotify.Watcher
+}
+
+func new() *manager {
+	return &manager{
+		name:     "config",
+		defaults: make(map[string]interface{}),
+		values:   make(map[string]interface{}),
+		flags:    make(map[string]*pflag.Flag),
+	}
+}
+
+func Manager() *manager {
+	mutex.Lock()
+	defer mutex.Unlock()
+	return cm
+}
+
+func (m *manager) WithPath(path string) *manager {
+	mutex.Lock()
+	defer mutex.Unlock()
+	m.path = path
+	return m
+}
+
+func (m *manager) WithName(name string) *manager {
+	mutex.Lock()
+	defer mutex.Unlock()
+	m.name = name
+	m.prefix = strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	return m
+}
+
 // Register registers a configuration struct and parses its tags
 // The name is used as the name of the configuration file and the prefix for the environment variables
-func Register(path, name string, c Config) error {
+func (m *manager) Register(c Config) error {
 	if c == nil {
 		return apperror.NewError("the configuration provided is nil")
 	}
@@ -135,65 +174,66 @@ func Register(path, name string, c Config) error {
 		return apperror.NewErrorf("the configuration provided is not a pointer to a struct, got %T", c)
 	}
 
-	mutex.Lock()
-	configName = name
-	configPath = path
-	prefix = strings.ToUpper(strings.ReplaceAll(configName, "-", "_"))
-	mutex.Unlock()
-
-	err := parseStructTags(reflect.ValueOf(c), "")
+	err := m.parseStructTags(reflect.ValueOf(c), "")
 	if err != nil {
 		return apperror.Wrap(err)
 	}
 
-	set(c)
+	cm.set(c)
 	return nil
 }
 
 // OnChange registers a function that is called when the configuration changes
 func OnChange(f func(o Config, n Config) error) {
-	onChange = append(onChange, f)
+	mutex.Lock()
+	defer mutex.Unlock()
+	cm.onChange = append(cm.onChange, f)
 }
 
 // Get returns the current configuration
 func Get() Config {
 	mutex.RLock()
 	defer mutex.RUnlock()
-	return config
+	return cm.config
 }
 
 // Read reads the configuration from the file, validates it and applies it
 // If the file does not exist, it creates a new one with the default values
+// The config path is resolved from flag.Path when this function is called
 func Read() error {
-	setConfigName(configName)
-	addConfigPath(flag.Path)
+	// Resolve the config path from flag.Path now that flags should be parsed
+	if cm.path == "" {
+		mutex.Lock()
+		cm.path = flag.Path
+		mutex.Unlock()
+	}
 
-	err := read()
+	err := cm.read()
 	if err != nil {
-		err := os.MkdirAll(flag.Path, 0750)
+		err := os.MkdirAll(cm.path, 0750)
 		if err != nil {
 			return apperror.NewError("creating configuration directory failed").AddError(err)
 		}
 
-		err = save()
+		err = cm.save()
 		if err != nil {
 			return apperror.NewError("writing default configuration file failed").AddError(err)
 		}
 
-		err = read()
+		err = cm.read()
 		if err != nil {
 			return apperror.NewError("reading configuration file after creation failed").AddError(err)
 		}
 	}
 
-	change, ok := reflect.New(reflect.TypeOf(config).Elem()).Interface().(Config)
+	change, ok := reflect.New(reflect.TypeOf(cm.config).Elem()).Interface().(Config)
 	if !ok {
-		return apperror.NewErrorf("creating new instance of %T failed", config)
+		return apperror.NewErrorf("creating new instance of %T failed", cm.config)
 	}
 
-	err = unmarshal(change)
+	err = cm.unmarshal(change)
 	if err != nil {
-		return apperror.NewErrorf("unmarshalling configuration data in %T failed", config).AddError(err)
+		return apperror.NewErrorf("unmarshalling configuration data in %T failed", cm.config).AddError(err)
 	}
 
 	err = change.Validate()
@@ -202,8 +242,8 @@ func Read() error {
 	}
 
 	o := Get()
-	set(change)
-	for _, f := range onChange {
+	cm.set(change)
+	for _, f := range cm.onChange {
 		err = f(o, change)
 		if err != nil {
 			return apperror.Wrap(err)
@@ -215,9 +255,17 @@ func Read() error {
 
 // Write writes the configuration to the file, validates it and applies it
 // If the file does not exist, it creates a new one with the default values
+// The config path is resolved from flag.Path when this function is called
 func Write(change Config) error {
 	if change == nil {
 		return apperror.NewError("the configuration provided is nil")
+	}
+
+	// Resolve the config path from flag.Path if not already set
+	if cm.path == "" {
+		mutex.Lock()
+		cm.path = flag.Path
+		mutex.Unlock()
 	}
 
 	err := change.Validate()
@@ -226,13 +274,13 @@ func Write(change Config) error {
 	}
 
 	o := Get()
-	set(change)
-	err = save()
+	cm.set(change)
+	err = cm.save()
 	if err != nil {
 		return apperror.Wrap(err)
 	}
 
-	for _, f := range onChange {
+	for _, f := range cm.onChange {
 		err = f(o, change)
 		if err != nil {
 			return apperror.Wrap(err)
@@ -246,11 +294,11 @@ func Write(change Config) error {
 // It ignores changes that happen within 1 second of each other
 // This is to prevent multiple calls when the file is saved
 func Watch() {
-	err := watch(func(_ fsnotify.Event) {
-		if time.Now().UnixMilli()-lastChange.Load() < 1000 {
+	err := cm.watch(func(_ fsnotify.Event) {
+		if time.Now().UnixMilli()-cm.lastChange.Load() < 1000 {
 			return
 		}
-		lastChange.Store(time.Now().UnixMilli())
+		cm.lastChange.Store(time.Now().UnixMilli())
 		err := Read()
 		if err != nil {
 			logger.Error().Err(err).Msg("failed to read configuration")
@@ -268,20 +316,12 @@ func Reset() {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	if watcher != nil {
-		watcher.Close()
-		watcher = nil
+	if cm.watcher != nil {
+		cm.watcher.Close()
+		cm.watcher = nil
 	}
 
-	config = nil
-	configName = ""
-	configPath = ""
-	prefix = ""
-	defaults = make(map[string]interface{})
-	values = make(map[string]interface{})
-	flags = make(map[string]*pflag.Flag)
-	onChange = nil
-	lastChange.Store(0)
+	cm = new()
 }
 
 // Changed checks if two configuration values are different by comparing their reflection values.
@@ -314,8 +354,8 @@ func Changed(o, n any) bool {
 }
 
 // set applies the configuration to the global variable
-func set(appConfig Config) {
+func (m *manager) set(appConfig Config) {
 	mutex.Lock()
 	defer mutex.Unlock()
-	config = appConfig
+	cm.config = appConfig
 }
