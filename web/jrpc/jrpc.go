@@ -862,7 +862,7 @@ func (s *Service) startMessageWriter(ctx context.Context, conn *websocket.Conn, 
 
 func (s *Service) closeWS(conn *websocket.Conn, code int, err error) {
 	var reason string
-	if err != nil {
+	if err != nil && !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
 		reason, _, _ = apperror.Split(err)
 		log.Trace().Field("code", code).Err(err).Msg("websocket connection closing with error")
 	}
