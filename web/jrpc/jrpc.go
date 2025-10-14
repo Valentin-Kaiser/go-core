@@ -73,6 +73,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/valentin-kaiser/go-core/apperror"
 	"github.com/valentin-kaiser/go-core/interruption"
+	"github.com/valentin-kaiser/go-core/logging"
 	"github.com/valentin-kaiser/go-core/logging/log"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -83,6 +84,8 @@ import (
 
 // Common error messages to avoid repeated allocations
 var (
+	logger = logging.GetPackageLogger("jrpc")
+
 	errMethodNotFound           = apperror.NewError("method not found")
 	errMethodReflectionNotFound = apperror.NewError("method reflection data not found")
 	errInvalidMethodSignature   = apperror.NewError("invalid method signature")
@@ -99,7 +102,10 @@ var (
 	// Reusable marshal options to avoid allocation
 	marshalOpts = protojson.MarshalOptions{
 		EmitUnpopulated: true,
-		UseProtoNames:   true,
+	}
+
+	unmarshalOpts = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
 	}
 )
 
@@ -237,6 +243,11 @@ func SetUpgrader(u websocket.Upgrader) {
 func (s *Service) HandlerFunc(w http.ResponseWriter, r *http.Request) {
 	defer interruption.Catch()
 
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	if s.isWebSocketRequest(r) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -306,7 +317,7 @@ func (s *Service) unary(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = protojson.Unmarshal(buf, msg)
+		err = unmarshalOpts.Unmarshal(buf, msg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -508,7 +519,7 @@ func (s *Service) call(ctx context.Context, service, method string, req proto.Me
 		defer bufferPool.Put(buf[:0])
 
 		reqPtr := reflect.New(wanted.Elem())
-		b, err := protojson.Marshal(req)
+		b, err := marshalOpts.Marshal(req)
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +527,7 @@ func (s *Service) call(ctx context.Context, service, method string, req proto.Me
 		if !ok {
 			return nil, errExpectedProtoMessage
 		}
-		if err := protojson.Unmarshal(b, pm); err != nil {
+		if err := unmarshalOpts.Unmarshal(b, pm); err != nil {
 			return nil, err
 		}
 		reqVal = reqPtr
@@ -526,8 +537,19 @@ func (s *Service) call(ctx context.Context, service, method string, req proto.Me
 	res := outs[0].Interface()
 	var err error
 	if e := outs[1].Interface(); e != nil {
-		err = e.(error)
+		var ok bool
+		err, ok = e.(error)
+		if !ok {
+			return nil, errExpectedProtoMessage
+		}
 	}
+
+	l := logger.Trace()
+	if err != nil {
+		l = logger.Warn().Err(err)
+	}
+
+	l.Field("service", service).Field("method", method).Msg("jRPC method called")
 	return res, err
 }
 
@@ -548,29 +570,22 @@ func (s *Service) message(md *methodInfo) (proto.Message, error) {
 	return proto.Clone(md.messageType), nil
 }
 
-func (s *Service) marshal(v any) ([]byte, error) {
-	if pm, ok := v.(proto.Message); ok {
-		return marshalOpts.Marshal(pm)
+func (s *Service) marshal(m any) ([]byte, error) {
+	if m == nil {
+		return nil, apperror.NewError("cannot marshal nil message")
 	}
-	rv := reflect.ValueOf(v)
-	if rv.IsValid() && rv.CanAddr() {
-		if pm, ok := rv.Addr().Interface().(proto.Message); ok {
-			return marshalOpts.Marshal(pm)
+
+	switch msg := m.(type) {
+	case proto.Message:
+		out, err := marshalOpts.Marshal(msg)
+		if err != nil {
+			return nil, apperror.NewError("failed to marshal response").AddError(err)
 		}
+
+		return out, nil
+	default:
+		return nil, apperror.NewError("failed to marshal response")
 	}
-	// Handle non-pointer values by creating a pointer to them
-	if rv.IsValid() && rv.Kind() == reflect.Struct {
-		// Create a new pointer to the struct type and copy the value
-		ptrType := reflect.PointerTo(rv.Type())
-		if ptrType.Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
-			newPtr := reflect.New(rv.Type())
-			newPtr.Elem().Set(rv)
-			if pm, ok := newPtr.Interface().(proto.Message); ok {
-				return marshalOpts.Marshal(pm)
-			}
-		}
-	}
-	return nil, apperror.NewError("response is not a proto message")
 }
 
 // handleBidirectionalStream handles bidirectional streaming WebSocket connections
@@ -637,12 +652,12 @@ func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, 
 
 	if reqPtr.IsValid() && len(reflect.ValueOf(msg).Elem().String()) > 0 {
 		// Copy from read message to the expected message type
-		b, err := protojson.Marshal(reqPtr.Interface().(proto.Message))
+		b, err := marshalOpts.Marshal(reqPtr.Interface().(proto.Message))
 		if err != nil {
 			s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 			return
 		}
-		err = protojson.Unmarshal(b, msg)
+		err = unmarshalOpts.Unmarshal(b, msg)
 		if err != nil {
 			s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 			return
@@ -767,7 +782,7 @@ func (s *Service) readWSMessage(conn *websocket.Conn, msgPtr reflect.Value) erro
 	}
 
 	if len(payload) > 0 {
-		err = protojson.Unmarshal(payload, msg)
+		err = unmarshalOpts.Unmarshal(payload, msg)
 		if err != nil {
 			return apperror.NewError("failed to unmarshal websocket message").AddError(err)
 		}
