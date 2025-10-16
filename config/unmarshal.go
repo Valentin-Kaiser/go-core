@@ -137,6 +137,49 @@ func setFieldValue(field reflect.Value, value interface{}) error {
 			field.SetUint(i)
 			return nil
 		}
+		if i, ok := value.(uint32); ok {
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(uint16); ok {
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(uint8); ok {
+			field.SetUint(uint64(i))
+			return nil
+		}
+		// Handle signed integers from YAML (convert to unsigned if non-negative)
+		if i, ok := value.(int); ok {
+			if i >= 0 {
+				field.SetUint(uint64(i))
+			}
+			return nil
+		}
+		if i, ok := value.(int64); ok {
+			if i >= 0 {
+				field.SetUint(uint64(i))
+			}
+			return nil
+		}
+		if i, ok := value.(int32); ok {
+			if i >= 0 {
+				field.SetUint(uint64(i))
+			}
+			return nil
+		}
+		if i, ok := value.(int16); ok {
+			if i >= 0 {
+				field.SetUint(uint64(i))
+			}
+			return nil
+		}
+		if i, ok := value.(int8); ok {
+			if i >= 0 {
+				field.SetUint(uint64(i))
+			}
+			return nil
+		}
 		if str, ok := value.(string); ok {
 			if i, err := strconv.ParseUint(str, 10, 64); err == nil {
 				field.SetUint(i)
@@ -150,6 +193,46 @@ func setFieldValue(field reflect.Value, value interface{}) error {
 		}
 		if f, ok := value.(float32); ok {
 			field.SetFloat(float64(f))
+			return nil
+		}
+		if i, ok := value.(int); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int64); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int32); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int16); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int8); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint64); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint32); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint16); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint8); ok {
+			field.SetFloat(float64(i))
 			return nil
 		}
 		if str, ok := value.(string); ok {
