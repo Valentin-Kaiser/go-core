@@ -881,6 +881,10 @@ func (s *Service) closeWS(conn *websocket.Conn, code int, err error) {
 		reason, _, _ = apperror.Split(err)
 		log.Trace().Field("code", code).Err(err).Msg("websocket connection closing with error")
 	}
+	if len(reason) > 123 {
+		log.Warn().Field("length", len(reason)).Field("code", code).Field("reason", reason).Msg("close reason too long, truncating to 123 bytes")
+		reason = reason[:123] // Close reason must be <= 123 bytes
+	}
 	err = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), time.Now().Add(time.Second))
 	if err != nil && !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
 		log.Error().Err(err).Msg("failed to send websocket close message")
