@@ -634,6 +634,11 @@ func TestOnChangeCallbacks(t *testing.T) {
 		t.Errorf("Write() failed: %v", err)
 	}
 
+	err = config.Read()
+	if err != nil {
+		t.Errorf("Read() failed: %v", err)
+	}
+
 	if !callbackCalled {
 		t.Error("OnChange callback should have been called")
 	}
@@ -666,8 +671,13 @@ func TestOnChangeCallbackError(t *testing.T) {
 	}
 
 	err = config.Write(newCfg)
+	if err != nil {
+		t.Errorf("Write() failed: %v", err)
+	}
+
+	err = config.Read()
 	if err == nil {
-		t.Error("Write() should fail when callback returns error")
+		t.Error("Read() should fail when callback returns error")
 	}
 }
 
