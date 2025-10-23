@@ -350,5 +350,5 @@ func Changed(o, n any) bool {
 func (m *manager) set(appConfig Config) {
 	mutex.Lock()
 	defer mutex.Unlock()
-	cm.config = appConfig
+	m.config = appConfig
 }

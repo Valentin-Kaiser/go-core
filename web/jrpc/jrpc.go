@@ -94,6 +94,7 @@ var (
 	errRequestMustBePointer     = apperror.NewError("request must be a pointer")
 	errNilRequest               = apperror.NewError("nil request")
 	errExpectedProtoMessage     = apperror.NewError("expected proto.Message for request")
+	errExpectedError            = apperror.NewError("expected error type in method return value")
 
 	// Cached reflection types to avoid repeated type operations
 	contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
@@ -540,7 +541,7 @@ func (s *Service) call(ctx context.Context, service, method string, req proto.Me
 		var ok bool
 		err, ok = e.(error)
 		if !ok {
-			return nil, errExpectedProtoMessage
+			return nil, errExpectedError
 		}
 	}
 

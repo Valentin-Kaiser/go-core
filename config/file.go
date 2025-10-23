@@ -70,7 +70,7 @@ func (m *manager) watch(onChange func(fsnotify.Event)) error {
 		}
 	}()
 
-	return m.watcher.Add(configFile)
+	return m.watcher.Add(filepath.Clean(filepath.Dir(configFile)))
 }
 
 // save saves the configuration to the file

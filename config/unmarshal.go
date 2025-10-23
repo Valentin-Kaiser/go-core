@@ -151,33 +151,38 @@ func setFieldValue(field reflect.Value, value interface{}) error {
 		}
 		// Handle signed integers from YAML (convert to unsigned if non-negative)
 		if i, ok := value.(int); ok {
-			if i >= 0 {
-				field.SetUint(uint64(i))
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
 			}
+			field.SetUint(uint64(i))
 			return nil
 		}
 		if i, ok := value.(int64); ok {
-			if i >= 0 {
-				field.SetUint(uint64(i))
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
 			}
+			field.SetUint(uint64(i))
 			return nil
 		}
 		if i, ok := value.(int32); ok {
-			if i >= 0 {
-				field.SetUint(uint64(i))
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
 			}
+			field.SetUint(uint64(i))
 			return nil
 		}
 		if i, ok := value.(int16); ok {
-			if i >= 0 {
-				field.SetUint(uint64(i))
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
 			}
+			field.SetUint(uint64(i))
 			return nil
 		}
 		if i, ok := value.(int8); ok {
-			if i >= 0 {
-				field.SetUint(uint64(i))
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
 			}
+			field.SetUint(uint64(i))
 			return nil
 		}
 		if str, ok := value.(string); ok {
