@@ -194,6 +194,32 @@ func (e Error) GetContext() map[string]interface{} {
 	return e.Context
 }
 
+// Is implements the error unwrapping interface for errors.Is()
+// It checks if the target error is equal to this error by comparing their messages
+func (e Error) Is(target error) bool {
+	if target == nil {
+		return false
+	}
+
+	// Check if target is also an Error type
+	if t, ok := target.(Error); ok {
+		return e.Message == t.Message
+	}
+
+	// Check if target's error message matches this error's message
+	return e.Message == target.Error()
+}
+
+// Unwrap implements the error unwrapping interface for errors.Is() and errors.As()
+// It returns the first additional error if any exist, allowing the standard library
+// to traverse the error chain when looking for specific error types
+func (e Error) Unwrap() error {
+	if len(e.Errors) > 0 {
+		return e.Errors[0]
+	}
+	return nil
+}
+
 // Error implements the error interface and returns the error message
 // If debug mode is enabled, it includes the stack trace and additional errors
 func (e Error) Error() string {

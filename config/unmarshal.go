@@ -8,39 +8,39 @@ import (
 	"strings"
 )
 
-func getValue(key string) interface{} {
+func (m *manager) getValue(key string) interface{} {
 	mutex.RLock()
 	defer mutex.RUnlock()
 
 	lowerKey := strings.ToLower(key)
-	if flag, exists := flags[lowerKey]; exists && flag.Changed {
-		return getFlagValue(flag)
+	if flag, exists := m.flags[lowerKey]; exists && flag.Changed {
+		return m.getFlagValue(flag)
 	}
 
-	envKey := getFlagKey(key)
+	envKey := m.getFlagKey(key)
 	if envVal := os.Getenv(envKey); envVal != "" {
 		return envVal
 	}
 
-	if val, exists := values[lowerKey]; exists {
+	if val, exists := m.values[lowerKey]; exists {
 		return val
 	}
 
-	if val, exists := defaults[lowerKey]; exists {
+	if val, exists := m.defaults[lowerKey]; exists {
 		return val
 	}
 
 	return nil
 }
 
-func unmarshal(target interface{}) error {
+func (m *manager) unmarshal(target interface{}) error {
 	mutex.RLock()
 	defer mutex.RUnlock()
 
-	return unmarshalStruct(reflect.ValueOf(target), "")
+	return m.unmarshalStruct(reflect.ValueOf(target), "")
 }
 
-func unmarshalStruct(v reflect.Value, prefix string) error {
+func (m *manager) unmarshalStruct(v reflect.Value, prefix string) error {
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			v.Set(reflect.New(v.Type().Elem()))
@@ -71,7 +71,7 @@ func unmarshalStruct(v reflect.Value, prefix string) error {
 		key := buildLabel(prefix, fieldName)
 
 		if fieldValue.Kind() == reflect.Struct {
-			if err := unmarshalStruct(fieldValue, key); err != nil {
+			if err := m.unmarshalStruct(fieldValue, key); err != nil {
 				return err
 			}
 			continue
@@ -81,13 +81,13 @@ func unmarshalStruct(v reflect.Value, prefix string) error {
 			if fieldValue.IsNil() {
 				fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
 			}
-			if err := unmarshalStruct(fieldValue, key); err != nil {
+			if err := m.unmarshalStruct(fieldValue, key); err != nil {
 				return err
 			}
 			continue
 		}
 
-		value := getValue(key)
+		value := m.getValue(key)
 		if value == nil {
 			continue
 		}
@@ -137,6 +137,54 @@ func setFieldValue(field reflect.Value, value interface{}) error {
 			field.SetUint(i)
 			return nil
 		}
+		if i, ok := value.(uint32); ok {
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(uint16); ok {
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(uint8); ok {
+			field.SetUint(uint64(i))
+			return nil
+		}
+		// Handle signed integers from YAML (convert to unsigned if non-negative)
+		if i, ok := value.(int); ok {
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
+			}
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(int64); ok {
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
+			}
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(int32); ok {
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
+			}
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(int16); ok {
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
+			}
+			field.SetUint(uint64(i))
+			return nil
+		}
+		if i, ok := value.(int8); ok {
+			if i < 0 {
+				return fmt.Errorf("negative integer %d cannot be converted to unsigned", i)
+			}
+			field.SetUint(uint64(i))
+			return nil
+		}
 		if str, ok := value.(string); ok {
 			if i, err := strconv.ParseUint(str, 10, 64); err == nil {
 				field.SetUint(i)
@@ -150,6 +198,46 @@ func setFieldValue(field reflect.Value, value interface{}) error {
 		}
 		if f, ok := value.(float32); ok {
 			field.SetFloat(float64(f))
+			return nil
+		}
+		if i, ok := value.(int); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int64); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int32); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int16); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(int8); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint64); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint32); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint16); ok {
+			field.SetFloat(float64(i))
+			return nil
+		}
+		if i, ok := value.(uint8); ok {
+			field.SetFloat(float64(i))
 			return nil
 		}
 		if str, ok := value.(string); ok {

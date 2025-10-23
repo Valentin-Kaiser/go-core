@@ -10,32 +10,32 @@ import (
 	"github.com/valentin-kaiser/go-core/apperror"
 )
 
-func setDefault(key string, value interface{}) {
+func (m *manager) setDefault(key string, value interface{}) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	lowerKey := strings.ToLower(key)
-	defaults[lowerKey] = value
+	m.defaults[lowerKey] = value
 }
 
-func bind(key string, flag *pflag.Flag) error {
+func (m *manager) bind(key string, flag *pflag.Flag) error {
 	mutex.Lock()
 	defer mutex.Unlock()
-	flags[strings.ToLower(key)] = flag
+	m.flags[strings.ToLower(key)] = flag
 	return nil
 }
 
-func getFlagKey(key string) string {
+func (m *manager) getFlagKey(key string) string {
 	key = strings.ReplaceAll(key, ".", "_")
 	key = strings.ReplaceAll(key, "-", "_")
 	key = strings.ToUpper(key)
 
-	if prefix == "" {
+	if m.prefix == "" {
 		return key
 	}
-	return prefix + "_" + key
+	return m.prefix + "_" + key
 }
 
-func getFlagValue(flag *pflag.Flag) interface{} {
+func (m *manager) getFlagValue(flag *pflag.Flag) interface{} {
 	switch flag.Value.Type() {
 	case "string":
 		return flag.Value.String()
@@ -125,15 +125,15 @@ func getFlagValue(flag *pflag.Flag) interface{} {
 
 // declareFlag declares a flag with the given label, usage and default value
 // It also binds the flag to the configuration
-func declareFlag(label string, usage string, defaultValue interface{}) error {
-	setDefault(label, defaultValue)
+func (m *manager) declareFlag(label string, usage string, defaultValue interface{}) error {
+	m.setDefault(label, defaultValue)
 	pflagLabel := kebabCase(label)
 	label = strings.ToLower(label)
 
 	// Check if flag already exists to avoid redefinition errors
 	if pflag.Lookup(pflagLabel) != nil {
 		// Flag already exists, just bind to config
-		return bind(label, pflag.Lookup(pflagLabel))
+		return m.bind(label, pflag.Lookup(pflagLabel))
 	}
 
 	switch v := defaultValue.(type) {
@@ -171,12 +171,12 @@ func declareFlag(label string, usage string, defaultValue interface{}) error {
 		return nil
 	}
 
-	return bind(label, pflag.Lookup(pflagLabel))
+	return m.bind(label, pflag.Lookup(pflagLabel))
 }
 
 // parseStructTags parses the struct tags of the given struct and registers the flags
 // It also sets the default values of the flags to the values of the struct fields
-func parseStructTags(v reflect.Value, labelBase string) error {
+func (m *manager) parseStructTags(v reflect.Value, labelBase string) error {
 	// If the config is a pointer, we need to get the type of the element
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -198,7 +198,7 @@ func parseStructTags(v reflect.Value, labelBase string) error {
 				v.Field(i).Set(reflect.New(field.Type.Elem()))
 			}
 
-			if err := parseStructTags(v.Field(i).Elem(), fieldName); err != nil {
+			if err := m.parseStructTags(v.Field(i).Elem(), fieldName); err != nil {
 				return apperror.Wrap(err)
 			}
 			continue
@@ -212,14 +212,14 @@ func parseStructTags(v reflect.Value, labelBase string) error {
 			}
 
 			label := buildLabel(labelBase, fieldName)
-			if err := parseStructTags(subv, label); err != nil {
+			if err := m.parseStructTags(subv, label); err != nil {
 				return apperror.Wrap(err)
 			}
 			continue
 		}
 
 		tag := buildLabel(labelBase, fieldName)
-		if err := declareFlag(tag, field.Tag.Get("usage"), v.Field(i).Interface()); err != nil {
+		if err := m.declareFlag(tag, field.Tag.Get("usage"), v.Field(i).Interface()); err != nil {
 			return apperror.Wrap(err)
 		}
 	}

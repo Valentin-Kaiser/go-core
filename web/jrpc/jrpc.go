@@ -72,6 +72,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/valentin-kaiser/go-core/apperror"
+	"github.com/valentin-kaiser/go-core/interruption"
+	"github.com/valentin-kaiser/go-core/logging"
 	"github.com/valentin-kaiser/go-core/logging/log"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -82,14 +84,17 @@ import (
 
 // Common error messages to avoid repeated allocations
 var (
+	logger = logging.GetPackageLogger("jrpc")
+
 	errMethodNotFound           = apperror.NewError("method not found")
 	errMethodReflectionNotFound = apperror.NewError("method reflection data not found")
-	errInvalidMethodSignature   = errors.New("invalid method signature")
-	errFirstArgMustBeContext    = errors.New("first argument must be context.Context")
-	errSecondReturnMustBeError  = errors.New("second return value must be error")
-	errRequestMustBePointer     = errors.New("request must be a pointer")
-	errNilRequest               = errors.New("nil request")
-	errExpectedProtoMessage     = errors.New("expected proto.Message for request")
+	errInvalidMethodSignature   = apperror.NewError("invalid method signature")
+	errFirstArgMustBeContext    = apperror.NewError("first argument must be context.Context")
+	errSecondReturnMustBeError  = apperror.NewError("second return value must be error")
+	errRequestMustBePointer     = apperror.NewError("request must be a pointer")
+	errNilRequest               = apperror.NewError("nil request")
+	errExpectedProtoMessage     = apperror.NewError("expected proto.Message for request")
+	errExpectedError            = apperror.NewError("expected error type in method return value")
 
 	// Cached reflection types to avoid repeated type operations
 	contextType = reflect.TypeOf((*context.Context)(nil)).Elem()
@@ -98,7 +103,10 @@ var (
 	// Reusable marshal options to avoid allocation
 	marshalOpts = protojson.MarshalOptions{
 		EmitUnpopulated: true,
-		UseProtoNames:   true,
+	}
+
+	unmarshalOpts = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
 	}
 )
 
@@ -234,6 +242,13 @@ func SetUpgrader(u websocket.Upgrader) {
 //   - w: HTTP ResponseWriter for sending the response
 //   - r: HTTP Request containing the API call
 func (s *Service) HandlerFunc(w http.ResponseWriter, r *http.Request) {
+	defer interruption.Catch()
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	if s.isWebSocketRequest(r) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -303,7 +318,7 @@ func (s *Service) unary(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = protojson.Unmarshal(buf, msg)
+		err = unmarshalOpts.Unmarshal(buf, msg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -352,12 +367,12 @@ func (s *Service) websocket(w http.ResponseWriter, r *http.Request, conn *websoc
 
 	md, err := s.find(service, method)
 	if err != nil {
-		s.closeWS(conn, websocket.CloseInternalServerErr, "service or method not found")
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 		return
 	}
 
 	if !md.method.IsValid() {
-		s.closeWS(conn, websocket.CloseInternalServerErr, "service not registered")
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.NewError("service not registered"))
 		return
 	}
 
@@ -366,7 +381,7 @@ func (s *Service) websocket(w http.ResponseWriter, r *http.Request, conn *websoc
 
 	streamingType, err := s.validateMethodSignature(mt, md.descriptor)
 	if err != nil {
-		s.closeWS(conn, websocket.CloseInternalServerErr, "invalid method signature: "+err.Error())
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.NewError("invalid method signature").AddError(err))
 		return
 	}
 
@@ -378,9 +393,9 @@ func (s *Service) websocket(w http.ResponseWriter, r *http.Request, conn *websoc
 	case StreamingTypeClientStream:
 		s.handleClientStream(WithWebSocketContext(r.Context(), w, r, conn), conn, m, mt)
 	case StreamingTypeUnary:
-		s.closeWS(conn, websocket.CloseInternalServerErr, "unary methods are not supported over WebSocket")
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.NewError("unary methods are not supported over WebSocket"))
 	default:
-		s.closeWS(conn, websocket.CloseInternalServerErr, "unsupported streaming type")
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.NewError("unsupported streaming type"))
 	}
 }
 
@@ -505,7 +520,7 @@ func (s *Service) call(ctx context.Context, service, method string, req proto.Me
 		defer bufferPool.Put(buf[:0])
 
 		reqPtr := reflect.New(wanted.Elem())
-		b, err := protojson.Marshal(req)
+		b, err := marshalOpts.Marshal(req)
 		if err != nil {
 			return nil, err
 		}
@@ -513,7 +528,7 @@ func (s *Service) call(ctx context.Context, service, method string, req proto.Me
 		if !ok {
 			return nil, errExpectedProtoMessage
 		}
-		if err := protojson.Unmarshal(b, pm); err != nil {
+		if err := unmarshalOpts.Unmarshal(b, pm); err != nil {
 			return nil, err
 		}
 		reqVal = reqPtr
@@ -523,8 +538,19 @@ func (s *Service) call(ctx context.Context, service, method string, req proto.Me
 	res := outs[0].Interface()
 	var err error
 	if e := outs[1].Interface(); e != nil {
-		err = e.(error)
+		var ok bool
+		err, ok = e.(error)
+		if !ok {
+			return nil, errExpectedError
+		}
 	}
+
+	l := logger.Trace()
+	if err != nil {
+		l = logger.Warn().Err(err)
+	}
+
+	l.Field("service", service).Field("method", method).Msg("jRPC method called")
 	return res, err
 }
 
@@ -545,29 +571,22 @@ func (s *Service) message(md *methodInfo) (proto.Message, error) {
 	return proto.Clone(md.messageType), nil
 }
 
-func (s *Service) marshal(v any) ([]byte, error) {
-	if pm, ok := v.(proto.Message); ok {
-		return marshalOpts.Marshal(pm)
+func (s *Service) marshal(m any) ([]byte, error) {
+	if m == nil {
+		return nil, apperror.NewError("cannot marshal nil message")
 	}
-	rv := reflect.ValueOf(v)
-	if rv.IsValid() && rv.CanAddr() {
-		if pm, ok := rv.Addr().Interface().(proto.Message); ok {
-			return marshalOpts.Marshal(pm)
+
+	switch msg := m.(type) {
+	case proto.Message:
+		out, err := marshalOpts.Marshal(msg)
+		if err != nil {
+			return nil, apperror.NewError("failed to marshal response").AddError(err)
 		}
+
+		return out, nil
+	default:
+		return nil, apperror.NewError("failed to marshal response")
 	}
-	// Handle non-pointer values by creating a pointer to them
-	if rv.IsValid() && rv.Kind() == reflect.Struct {
-		// Create a new pointer to the struct type and copy the value
-		ptrType := reflect.PointerTo(rv.Type())
-		if ptrType.Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
-			newPtr := reflect.New(rv.Type())
-			newPtr.Elem().Set(rv)
-			if pm, ok := newPtr.Interface().(proto.Message); ok {
-				return marshalOpts.Marshal(pm)
-			}
-		}
-	}
-	return nil, errors.New("response is not a proto message")
 }
 
 // handleBidirectionalStream handles bidirectional streaming WebSocket connections
@@ -606,10 +625,10 @@ func (s *Service) handleBidirectionalStream(ctx context.Context, conn *websocket
 	<-write
 
 	if final != nil && !websocket.IsCloseError(final, websocket.CloseNormalClosure) {
-		s.closeWS(conn, websocket.CloseInternalServerErr, final.Error())
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(final))
 		return
 	}
-	s.closeWS(conn, websocket.CloseNormalClosure, "")
+	s.closeWS(conn, websocket.CloseNormalClosure, nil)
 }
 
 // handleServerStream handles server streaming WebSocket connections
@@ -620,7 +639,7 @@ func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, 
 
 	msg, err := s.message(md)
 	if err != nil {
-		s.closeWS(conn, websocket.CloseInternalServerErr, "failed to create request message")
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 		return
 	}
 
@@ -628,20 +647,20 @@ func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, 
 	reqPtr := reflect.New(mt.In(1).Elem())
 	err = s.readWSMessage(conn, reqPtr)
 	if err != nil {
-		s.closeWS(conn, websocket.CloseInternalServerErr, "failed to read initial message: "+err.Error())
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 		return
 	}
 
 	if reqPtr.IsValid() && len(reflect.ValueOf(msg).Elem().String()) > 0 {
 		// Copy from read message to the expected message type
-		b, err := protojson.Marshal(reqPtr.Interface().(proto.Message))
+		b, err := marshalOpts.Marshal(reqPtr.Interface().(proto.Message))
 		if err != nil {
-			s.closeWS(conn, websocket.CloseInternalServerErr, "failed to marshal initial message")
+			s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 			return
 		}
-		err = protojson.Unmarshal(b, msg)
+		err = unmarshalOpts.Unmarshal(b, msg)
 		if err != nil {
-			s.closeWS(conn, websocket.CloseInternalServerErr, "failed to unmarshal initial message")
+			s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 			return
 		}
 	}
@@ -654,7 +673,7 @@ func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, 
 	wanted := mt.In(1)
 	reqVal := reflect.ValueOf(msg)
 	if !reqVal.Type().AssignableTo(wanted) {
-		s.closeWS(conn, websocket.CloseInternalServerErr, "request message is of wrong type")
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.NewError("request message is of wrong type"))
 		return
 	}
 
@@ -678,10 +697,10 @@ func (s *Service) handleServerStream(ctx context.Context, conn *websocket.Conn, 
 	<-write
 
 	if final != nil && !websocket.IsCloseError(final, websocket.CloseNormalClosure) {
-		s.closeWS(conn, websocket.CloseInternalServerErr, final.Error())
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(final))
 		return
 	}
-	s.closeWS(conn, websocket.CloseNormalClosure, "")
+	s.closeWS(conn, websocket.CloseNormalClosure, nil)
 }
 
 // handleClientStream handles client streaming WebSocket connections
@@ -731,42 +750,42 @@ func (s *Service) handleClientStream(ctx context.Context, conn *websocket.Conn, 
 	}
 
 	if final.err != nil && !websocket.IsCloseError(final.err, websocket.CloseNormalClosure) {
-		s.closeWS(conn, websocket.CloseInternalServerErr, final.err.Error())
+		s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(final.err))
 		return
 	}
 
 	if final.resp != nil {
 		err := s.writeWSMessage(conn, reflect.ValueOf(final.resp), reflect.TypeOf(final.resp))
 		if err != nil {
-			s.closeWS(conn, websocket.CloseInternalServerErr, err.Error())
+			s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 			return
 		}
 	}
-	s.closeWS(conn, websocket.CloseNormalClosure, "")
+	s.closeWS(conn, websocket.CloseNormalClosure, nil)
 }
 func (s *Service) readWSMessage(conn *websocket.Conn, msgPtr reflect.Value) error {
 	messageType, payload, err := conn.ReadMessage()
 	if err != nil {
-		return err
+		return apperror.NewError("failed to read websocket message").AddError(err)
 	}
 
 	if messageType != websocket.TextMessage {
-		return errors.New("only text messages are supported")
+		return apperror.NewError("only text messages are supported")
 	}
 
 	if msgPtr.Type().Kind() != reflect.Ptr {
-		return errors.New("message type is not a pointer")
+		return apperror.NewError("message type is not a pointer")
 	}
 
 	msg, ok := msgPtr.Interface().(proto.Message)
 	if !ok {
-		return errors.New("message type is not a proto message")
+		return apperror.NewError("message type is not a proto message")
 	}
 
 	if len(payload) > 0 {
-		err = protojson.Unmarshal(payload, msg)
+		err = unmarshalOpts.Unmarshal(payload, msg)
 		if err != nil {
-			return err
+			return apperror.NewError("failed to unmarshal websocket message").AddError(err)
 		}
 	}
 
@@ -849,7 +868,7 @@ func (s *Service) startMessageWriter(ctx context.Context, conn *websocket.Conn, 
 
 			err := s.writeWSMessage(conn, val, outPtr)
 			if err != nil {
-				log.Error().Err(err).Msg("failed to write websocket message")
+				s.closeWS(conn, websocket.CloseInternalServerErr, apperror.Wrap(err))
 				return
 			}
 		}
@@ -857,8 +876,17 @@ func (s *Service) startMessageWriter(ctx context.Context, conn *websocket.Conn, 
 	return write
 }
 
-func (s *Service) closeWS(conn *websocket.Conn, code int, reason string) {
-	err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), time.Now().Add(time.Second))
+func (s *Service) closeWS(conn *websocket.Conn, code int, err error) {
+	var reason string
+	if err != nil && !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
+		reason, _, _ = apperror.Split(err)
+		log.Trace().Field("code", code).Err(err).Msg("websocket connection closing with error")
+	}
+	if len(reason) > 123 {
+		log.Warn().Field("length", len(reason)).Field("code", code).Field("reason", reason).Msg("close reason too long, truncating to 123 bytes")
+		reason = reason[:123] // Close reason must be <= 123 bytes
+	}
+	err = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), time.Now().Add(time.Second))
 	if err != nil && !errors.Is(err, websocket.ErrCloseSent) && !errors.Is(err, net.ErrClosed) {
 		log.Error().Err(err).Msg("failed to send websocket close message")
 	}
@@ -883,20 +911,20 @@ const (
 func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.MethodDescriptor) (StreamingType, error) {
 	// Basic validation: must have at least context parameter and error return
 	if mt.NumIn() < 1 || !mt.In(0).Implements(contextType) {
-		return StreamingTypeInvalid, errors.New("first parameter must be context.Context")
+		return StreamingTypeInvalid, apperror.NewError("first parameter must be context.Context")
 	}
 	if mt.NumOut() < 1 || !mt.Out(mt.NumOut()-1).Implements(errorType) {
-		return StreamingTypeInvalid, errors.New("last return value must be error")
+		return StreamingTypeInvalid, apperror.NewError("last return value must be error")
 	}
 
 	// Get expected message types from proto descriptor
 	inputType, err := s.getProtoMessageType(md.Input())
 	if err != nil {
-		return StreamingTypeInvalid, errors.New("failed to resolve input message type: " + err.Error())
+		return StreamingTypeInvalid, apperror.NewError("failed to resolve input message type: " + err.Error())
 	}
 	outputType, err := s.getProtoMessageType(md.Output())
 	if err != nil {
-		return StreamingTypeInvalid, errors.New("failed to resolve output message type: " + err.Error())
+		return StreamingTypeInvalid, apperror.NewError("failed to resolve output message type: " + err.Error())
 	}
 
 	// Determine streaming type based on proto descriptor and validate signature
@@ -907,21 +935,21 @@ func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 	case isServerStreaming && isClientStreaming:
 		// Bidirectional streaming: func(ctx, chan *InputMsg, chan OutputMsg) error
 		if mt.NumIn() != 3 || mt.NumOut() != 1 {
-			return StreamingTypeInvalid, errors.New("bidirectional streaming method must have signature: func(context.Context, chan *InputMsg, chan OutputMsg) error")
+			return StreamingTypeInvalid, apperror.NewError("bidirectional streaming method must have signature: func(context.Context, chan *InputMsg, chan OutputMsg) error")
 		}
 
 		// Validate input channel type: chan *InputMsg
 		if mt.In(1).Kind() != reflect.Chan || mt.In(1).Elem().Kind() != reflect.Ptr {
-			return StreamingTypeInvalid, errors.New("second parameter must be chan *InputMsg")
+			return StreamingTypeInvalid, apperror.NewError("second parameter must be chan *InputMsg")
 		}
 		actualInputType := mt.In(1).Elem().Elem() // chan *T -> T
 		if !s.typesMatch(actualInputType, inputType) {
-			return StreamingTypeInvalid, errors.New("input channel type mismatch: expected chan *" + inputType.String() + ", got " + mt.In(1).String())
+			return StreamingTypeInvalid, apperror.NewError("input channel type mismatch: expected chan *" + inputType.String() + ", got " + mt.In(1).String())
 		}
 
 		// Validate output channel type: chan OutputMsg
 		if mt.In(2).Kind() != reflect.Chan {
-			return StreamingTypeInvalid, errors.New("third parameter must be chan OutputMsg")
+			return StreamingTypeInvalid, apperror.NewError("third parameter must be chan OutputMsg")
 		}
 		actualOutputType := mt.In(2).Elem() // chan T -> T
 		// For output, we need to handle both *T and T cases
@@ -929,7 +957,7 @@ func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 			actualOutputType = actualOutputType.Elem()
 		}
 		if !s.typesMatch(actualOutputType, outputType) {
-			return StreamingTypeInvalid, errors.New("output channel type mismatch: expected chan " + outputType.String() + ", got " + mt.In(2).String())
+			return StreamingTypeInvalid, apperror.NewError("output channel type mismatch: expected chan " + outputType.String() + ", got " + mt.In(2).String())
 		}
 
 		return StreamingTypeBidirectional, nil
@@ -937,28 +965,28 @@ func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 	case isServerStreaming && !isClientStreaming:
 		// Server streaming: func(ctx, *InputMsg, chan OutputMsg) error
 		if mt.NumIn() != 3 || mt.NumOut() != 1 {
-			return StreamingTypeInvalid, errors.New("server streaming method must have signature: func(context.Context, *InputMsg, chan OutputMsg) error")
+			return StreamingTypeInvalid, apperror.NewError("server streaming method must have signature: func(context.Context, *InputMsg, chan OutputMsg) error")
 		}
 
 		// Validate input type: *InputMsg
 		if mt.In(1).Kind() != reflect.Ptr {
-			return StreamingTypeInvalid, errors.New("second parameter must be *InputMsg")
+			return StreamingTypeInvalid, apperror.NewError("second parameter must be *InputMsg")
 		}
 		actualInputType := mt.In(1).Elem() // *T -> T
 		if !s.typesMatch(actualInputType, inputType) {
-			return StreamingTypeInvalid, errors.New("input type mismatch: expected *" + inputType.String() + ", got " + mt.In(1).String())
+			return StreamingTypeInvalid, apperror.NewError("input type mismatch: expected *" + inputType.String() + ", got " + mt.In(1).String())
 		}
 
 		// Validate output channel type: chan OutputMsg
 		if mt.In(2).Kind() != reflect.Chan || mt.In(2).ChanDir()&reflect.SendDir == 0 {
-			return StreamingTypeInvalid, errors.New("third parameter must be send chan OutputMsg")
+			return StreamingTypeInvalid, apperror.NewError("third parameter must be send chan OutputMsg")
 		}
 		actualOutputType := mt.In(2).Elem() // chan T -> T
 		if actualOutputType.Kind() == reflect.Ptr {
 			actualOutputType = actualOutputType.Elem()
 		}
 		if !s.typesMatch(actualOutputType, outputType) {
-			return StreamingTypeInvalid, errors.New("output channel type mismatch: expected chan " + outputType.String() + ", got " + mt.In(2).String())
+			return StreamingTypeInvalid, apperror.NewError("output channel type mismatch: expected chan " + outputType.String() + ", got " + mt.In(2).String())
 		}
 
 		return StreamingTypeServerStream, nil
@@ -966,16 +994,16 @@ func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 	case !isServerStreaming && isClientStreaming:
 		// Client streaming: func(ctx, chan *InputMsg) (OutputMsg, error)
 		if mt.NumIn() != 2 || mt.NumOut() != 2 {
-			return StreamingTypeInvalid, errors.New("client streaming method must have signature: func(context.Context, chan *InputMsg) (OutputMsg, error)")
+			return StreamingTypeInvalid, apperror.NewError("client streaming method must have signature: func(context.Context, chan *InputMsg) (OutputMsg, error)")
 		}
 
 		// Validate input channel type: chan *InputMsg
 		if mt.In(1).Kind() != reflect.Chan || mt.In(1).Elem().Kind() != reflect.Ptr {
-			return StreamingTypeInvalid, errors.New("second parameter must be chan *InputMsg")
+			return StreamingTypeInvalid, apperror.NewError("second parameter must be chan *InputMsg")
 		}
 		actualInputType := mt.In(1).Elem().Elem() // chan *T -> T
 		if !s.typesMatch(actualInputType, inputType) {
-			return StreamingTypeInvalid, errors.New("input channel type mismatch: expected chan *" + inputType.String() + ", got " + mt.In(1).String())
+			return StreamingTypeInvalid, apperror.NewError("input channel type mismatch: expected chan *" + inputType.String() + ", got " + mt.In(1).String())
 		}
 
 		// Validate output type: OutputMsg or *OutputMsg
@@ -984,7 +1012,7 @@ func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 			actualOutputType = actualOutputType.Elem()
 		}
 		if !s.typesMatch(actualOutputType, outputType) {
-			return StreamingTypeInvalid, errors.New("output type mismatch: expected " + outputType.String() + ", got " + mt.Out(0).String())
+			return StreamingTypeInvalid, apperror.NewError("output type mismatch: expected " + outputType.String() + ", got " + mt.Out(0).String())
 		}
 
 		return StreamingTypeClientStream, nil
@@ -992,16 +1020,16 @@ func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 	default:
 		// Unary: func(ctx, *InputMsg) (OutputMsg, error)
 		if mt.NumIn() != 2 || mt.NumOut() != 2 {
-			return StreamingTypeInvalid, errors.New("unary method must have signature: func(context.Context, *InputMsg) (OutputMsg, error)")
+			return StreamingTypeInvalid, apperror.NewError("unary method must have signature: func(context.Context, *InputMsg) (OutputMsg, error)")
 		}
 
 		// Validate input type: *InputMsg
 		if mt.In(1).Kind() != reflect.Ptr {
-			return StreamingTypeInvalid, errors.New("second parameter must be *InputMsg")
+			return StreamingTypeInvalid, apperror.NewError("second parameter must be *InputMsg")
 		}
 		actualInputType := mt.In(1).Elem() // *T -> T
 		if !s.typesMatch(actualInputType, inputType) {
-			return StreamingTypeInvalid, errors.New("input type mismatch: expected *" + inputType.String() + ", got " + mt.In(1).String())
+			return StreamingTypeInvalid, apperror.NewError("input type mismatch: expected *" + inputType.String() + ", got " + mt.In(1).String())
 		}
 
 		// Validate output type: OutputMsg or *OutputMsg
@@ -1010,7 +1038,7 @@ func (s *Service) validateMethodSignature(mt reflect.Type, md protoreflect.Metho
 			actualOutputType = actualOutputType.Elem()
 		}
 		if !s.typesMatch(actualOutputType, outputType) {
-			return StreamingTypeInvalid, errors.New("output type mismatch: expected " + outputType.String() + ", got " + mt.Out(0).String())
+			return StreamingTypeInvalid, apperror.NewError("output type mismatch: expected " + outputType.String() + ", got " + mt.Out(0).String())
 		}
 
 		return StreamingTypeUnary, nil

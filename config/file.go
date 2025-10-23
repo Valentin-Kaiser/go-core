@@ -7,75 +7,61 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/valentin-kaiser/go-core/apperror"
-	"github.com/valentin-kaiser/go-core/flag"
 
 	"gopkg.in/yaml.v2"
 )
 
-func setConfigName(name string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	configName = name
-}
-
-func addConfigPath(path string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-	configPath = path
-}
-
-func read() error {
+func (m *manager) read() error {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	if configName == "" || configPath == "" {
+	if m.name == "" || m.path == "" {
 		return apperror.NewError("config name and path must be set")
 	}
 
-	configFile := filepath.Join(configPath, configName+".yaml")
+	configFile := filepath.Join(m.path, m.name+".yaml")
 
 	data, err := os.ReadFile(filepath.Clean(configFile))
 	if err != nil {
-		return err
+		return apperror.NewError("reading configuration file failed").AddError(err)
 	}
 
 	var yamlData map[string]interface{}
 	if err := yaml.Unmarshal(data, &yamlData); err != nil {
-		return err
+		return apperror.NewError("unmarshalling configuration file failed").AddError(err)
 	}
 
-	values = make(map[string]interface{})
-	flatten(yamlData, "")
-
+	m.values = make(map[string]interface{})
+	m.flatten(yamlData, "")
 	return nil
 }
 
-func watch(onChange func(fsnotify.Event)) error {
+func (m *manager) watch(onChange func(fsnotify.Event)) error {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	if watcher != nil {
-		watcher.Close()
+	if m.watcher != nil {
+		m.watcher.Close()
 	}
 
 	var err error
-	watcher, err = fsnotify.NewWatcher()
+	m.watcher, err = fsnotify.NewWatcher()
 	if err != nil {
-		return err
+		return apperror.NewError("creating file watcher failed").AddError(err)
 	}
 
-	configFile := filepath.Join(configPath, configName+".yaml")
+	configFile := filepath.Join(m.path, m.name+".yaml")
 	go func() {
 		for {
 			select {
-			case event, ok := <-watcher.Events:
+			case event, ok := <-m.watcher.Events:
 				if !ok {
 					return
 				}
 				if event.Name == configFile && (event.Op&fsnotify.Write == fsnotify.Write) {
 					onChange(event)
 				}
-			case err, ok := <-watcher.Errors:
+			case err, ok := <-m.watcher.Errors:
 				if !ok {
 					return
 				}
@@ -84,18 +70,18 @@ func watch(onChange func(fsnotify.Event)) error {
 		}
 	}()
 
-	return watcher.Add(configPath)
+	return m.watcher.Add(filepath.Clean(filepath.Dir(configFile)))
 }
 
 // save saves the configuration to the file
 // If the file does not exist, it creates a new one with the default values
-func save() error {
+func (m *manager) save() error {
 	// Ensure the directory exists before trying to create the file
-	if err := os.MkdirAll(flag.Path, 0750); err != nil {
+	if err := os.MkdirAll(m.path, 0750); err != nil {
 		return apperror.NewError("creating configuration directory failed").AddError(err)
 	}
 
-	path, err := filepath.Abs(filepath.Join(flag.Path, configName+".yaml"))
+	path, err := filepath.Abs(filepath.Join(m.path, m.name+".yaml"))
 	if err != nil {
 		return apperror.NewError("building absolute path of configuration file failed").AddError(err)
 	}
@@ -106,7 +92,7 @@ func save() error {
 
 	mutex.RLock()
 	defer mutex.RUnlock()
-	data, err := yaml.Marshal(config)
+	data, err := yaml.Marshal(m.config)
 	if err != nil {
 		return apperror.NewError("marshalling configuration data failed").AddError(err)
 	}
@@ -124,7 +110,7 @@ func save() error {
 	return nil
 }
 
-func flatten(data map[string]interface{}, prefix string) {
+func (m *manager) flatten(data map[string]interface{}, prefix string) {
 	for key, value := range data {
 		fullKey := key
 		if prefix != "" {
@@ -133,7 +119,7 @@ func flatten(data map[string]interface{}, prefix string) {
 
 		// Handle map[string]interface{}
 		if nested, ok := value.(map[string]interface{}); ok {
-			flatten(nested, fullKey)
+			m.flatten(nested, fullKey)
 			continue
 		}
 
@@ -145,10 +131,10 @@ func flatten(data map[string]interface{}, prefix string) {
 					nestedString[keyStr] = v
 				}
 			}
-			flatten(nestedString, fullKey)
+			m.flatten(nestedString, fullKey)
 			continue
 		}
 
-		values[strings.ToLower(fullKey)] = value
+		m.values[strings.ToLower(fullKey)] = value
 	}
 }
