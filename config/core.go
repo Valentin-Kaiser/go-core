@@ -179,7 +179,7 @@ func (m *manager) Register(c Config) error {
 		return apperror.Wrap(err)
 	}
 
-	cm.set(c)
+	m.set(c)
 	return nil
 }
 
