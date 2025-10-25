@@ -247,7 +247,7 @@ func RegisterOnConnectHandler(handler func(db *gorm.DB, config Config) error) {
 func connect(config Config) (*gorm.DB, error) {
 	// Silence gorm internal logging
 	newLogger := gl.New(
-		nil,
+		logger,
 		gl.Config{
 			SlowThreshold: time.Second,
 			LogLevel:      gl.Silent,
